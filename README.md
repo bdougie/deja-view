@@ -25,11 +25,11 @@ Find similar GitHub issues using semantic search powered by Chroma vector databa
 
 ```bash
 # Index repository with discussions
-$ python cli.py index continuedev/continue --include-discussions
+$ uv run cli.py index continuedev/continue --include-discussions
 ✓ Successfully indexed 250 items from continuedev/continue (200 issues, 50 discussions)
 
 # Suggest discussions (dry-run mode)
-$ python cli.py suggest-discussions continuedev/continue
+$ uv run cli.py suggest-discussions continuedev/continue
 ┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ #      ┃ Title                        ┃ Score  ┃ State  ┃ Reasons              ┃
 ┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
@@ -58,35 +58,35 @@ cp .env.example .env
 
 ```bash
 # Index a repository (issues only)
-python cli.py index continuedev/continue --max-issues 200
+uv run cli.py index continuedev/continue --max-issues 200
 
 # Index with discussions
-python cli.py index continuedev/continue --max-issues 200 --include-discussions
+uv run cli.py index continuedev/continue --max-issues 200 --include-discussions
 
 # Find similar issues or PRs
-python cli.py find https://github.com/continuedev/continue/pull/2000
+uv run cli.py find https://github.com/continuedev/continue/pull/2000
 
 # Suggest which issues should be discussions (dry-run)
-python cli.py suggest-discussions continuedev/continue
+uv run cli.py suggest-discussions continuedev/continue
 
 # Execute discussion suggestions
-python cli.py suggest-discussions continuedev/continue --execute
+uv run cli.py suggest-discussions continuedev/continue --execute
 
 # Quick command (index + find)
-python cli.py quick continuedev/continue 2000 --index-first
+uv run cli.py quick continuedev/continue 2000 --index-first
 
 # View statistics
-python cli.py stats
+uv run cli.py stats
 
 # Clear database
-python cli.py clear
+uv run cli.py clear
 ```
 
 #### API Server
 
 ```bash
 # Start the API server
-python api.py
+uv run api.py
 
 # View API docs
 open http://localhost:8000/docs
@@ -96,7 +96,7 @@ open http://localhost:8000/docs
 
 ```bash
 # Run interactive demo
-python demo_client.py
+uv run demo_client.py
 ```
 
 ## API Endpoints
@@ -155,11 +155,11 @@ suggestions = response.json()["suggestions"]
 
 ```bash
 # Index repository
-$ python cli.py index continuedev/continue
+$ uv run cli.py index continuedev/continue
 ✓ Successfully indexed 200 issues from continuedev/continue
 
 # Find similar issues/PRs with URL
-$ python cli.py find https://github.com/continuedev/continue/pull/2000
+$ uv run cli.py find https://github.com/continuedev/continue/pull/2000
 ┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┓
 ┃ #      ┃ Title                                 ┃ Similarity ┃ State  ┃
 ┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━┩
@@ -186,7 +186,7 @@ $ python cli.py find https://github.com/continuedev/continue/pull/2000
 
 ```bash
 # Run API in development mode
-python -m uvicorn api:app --reload
+uv run uvicorn api:app --reload
 
 # Make CLI executable
 chmod +x cli.py
