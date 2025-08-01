@@ -57,23 +57,46 @@ class SimilarityService:
         self.collection_name = "github_issues"
         self._init_collection()
         
-        # Discussion suggestion patterns
+        # Discussion suggestion patterns - more aggressive matching
         self.question_patterns = [
             r'^(how|what|why|when|where|which|who|can|could|should|would|will|is|are|do|does|did)\b',
             r'\?',
-            r'\b(help|guidance|advice|opinion|thoughts|suggestions?)\b',
-            r'\b(best practices?|recommendations?)\b'
+            r'\b(help|guidance|advice|opinion|thoughts|suggestions?|input|feedback)\b',
+            r'\b(best practices?|recommendations?|approach|strategy|way)\b',
+            r'\b(anyone|somebody|someone)\b.*\b(know|tried|experience|success)\b',
+            r'\b(how to|how do|how can|how should)\b',
+            r'\b(what.*think|thoughts on|opinions on)\b'
         ]
         
         self.feature_patterns = [
-            r'\b(feature request|enhancement|suggestion|proposal|idea)\b',
-            r'\b(would like|wish|hope|want|need)\b.*\b(feature|functionality|capability)\b',
-            r'\b(add|implement|support|include)\b.*\b(feature|option|ability)\b'
+            r'\b(feature request|enhancement|suggestion|proposal|idea|rfc)\b',
+            r'\b(would like|wish|hope|want|need|desire)\b.*\b(feature|functionality|capability|ability|option)\b',
+            r'\b(add|implement|support|include|introduce|create)\b.*\b(feature|option|ability|functionality|support|capability)\b',
+            r'\b(it would be|would be nice|would be great|would be helpful)\b',
+            r'\b(request|requesting)\b.*\b(feature|enhancement|addition)\b',
+            r'\b(can we|could we|should we)\b.*\b(add|implement|support|have)\b',
+            r'\b(feature|functionality|capability)\b.*\b(request|suggestion|proposal)\b'
         ]
         
         self.discussion_labels = [
             'question', 'help wanted', 'discussion', 'feature request',
-            'enhancement', 'idea', 'proposal', 'feedback', 'opinions'
+            'enhancement', 'idea', 'proposal', 'feedback', 'opinions',
+            'rfc', 'design', 'brainstorming', 'suggestion'
+        ]
+        
+        # RFC/Proposal patterns
+        self.proposal_patterns = [
+            r'\b(rfc|proposal|design doc|spec|specification)\b',
+            r'\b(propose|proposing|suggest|suggesting)\b',
+            r'\b(approach|solution|design|architecture)\b.*\b(discussion|feedback|thoughts)\b'
+        ]
+        
+        # Discussion-oriented phrases
+        self.discussion_phrases = [
+            r'\b(open to|looking for|seeking)\b.*\b(feedback|input|thoughts|suggestions)\b',
+            r'\b(brainstorm|discuss|explore|consider)\b',
+            r'\b(community|everyone|folks|people)\b.*\b(think|opinion|experience)\b',
+            r'\b(share.*experience|lessons learned|what.*worked)\b'
         ]
     
     def _init_collection(self):
@@ -408,7 +431,7 @@ class SimilarityService:
             return {"error": str(e)}
     
     def _calculate_discussion_score(self, issue: Issue) -> tuple[float, List[str]]:
-        """Calculate how likely an issue should be a discussion"""
+        """Calculate how likely an issue should be a discussion - more aggressive scoring"""
         score = 0.0
         reasons = []
         
@@ -416,50 +439,92 @@ class SimilarityService:
         body_lower = (issue.body or "").lower()
         combined_text = f"{title_lower} {body_lower}"
         
-        # Check question patterns
+        # Check question patterns (increased weight)
         for pattern in self.question_patterns:
             if re.search(pattern, combined_text, re.IGNORECASE):
-                score += 0.3
+                score += 0.4
                 reasons.append("Contains question pattern")
                 break
         
-        # Check feature request patterns
+        # Check feature request patterns (increased weight)
         for pattern in self.feature_patterns:
             if re.search(pattern, combined_text, re.IGNORECASE):
-                score += 0.25
+                score += 0.35
                 reasons.append("Feature request pattern")
                 break
         
-        # Check labels
+        # Check RFC/Proposal patterns
+        for pattern in self.proposal_patterns:
+            if re.search(pattern, combined_text, re.IGNORECASE):
+                score += 0.45
+                reasons.append("RFC/Proposal pattern")
+                break
+        
+        # Check discussion-oriented phrases
+        for pattern in self.discussion_phrases:
+            if re.search(pattern, combined_text, re.IGNORECASE):
+                score += 0.3
+                reasons.append("Discussion-oriented language")
+                break
+        
+        # Check labels (increased weight)
         for label in issue.labels:
             if label.lower() in [dl.lower() for dl in self.discussion_labels]:
-                score += 0.4
+                score += 0.5
                 reasons.append(f"Has '{label}' label")
                 break
         
-        # Check for discussion-worthy keywords
+        # Check for discussion-worthy keywords (expanded list)
         discussion_keywords = [
             'opinion', 'thoughts', 'feedback', 'advice', 'best practice',
-            'recommendation', 'approach', 'strategy', 'philosophy', 'design decision'
+            'recommendation', 'approach', 'strategy', 'philosophy', 'design decision',
+            'brainstorm', 'explore', 'consider', 'community', 'input', 'guidance',
+            'experience', 'lessons', 'workflow', 'process', 'methodology'
         ]
         
+        keyword_count = 0
         for keyword in discussion_keywords:
             if keyword in combined_text:
-                score += 0.2
-                reasons.append(f"Contains '{keyword}'")
-                break
+                keyword_count += 1
+                if keyword_count == 1:  # Only add reason once
+                    reasons.append(f"Contains discussion keywords")
         
-        # Penalize if it looks like a bug report
-        bug_keywords = ['error', 'bug', 'crash', 'exception', 'traceback', 'stacktrace']
+        # Scale score based on number of keywords found
+        if keyword_count > 0:
+            score += min(0.3, keyword_count * 0.1)
+        
+        # Reduced penalty for bug-related keywords (they might still be feature requests)
+        bug_keywords = ['crash', 'exception', 'traceback', 'stacktrace', 'segfault']
         for keyword in bug_keywords:
             if keyword in combined_text:
-                score -= 0.3
-                reasons.append(f"Bug report indicator: '{keyword}'")
+                score -= 0.15  # Reduced from 0.3
+                reasons.append(f"Possible bug report: '{keyword}'")
+                break
+        
+        # Check if issue title suggests it's not a bug
+        non_bug_indicators = ['feature', 'enhancement', 'suggestion', 'idea', 'proposal', 'rfc', 'discussion']
+        for indicator in non_bug_indicators:
+            if indicator in title_lower:
+                score += 0.2
+                reasons.append(f"Non-bug indicator in title: '{indicator}'")
                 break
         
         # Bonus for open issues (closed issues less likely to be converted)
         if issue.state == 'open':
-            score += 0.1
+            score += 0.15  # Increased from 0.1
+        
+        # Additional scoring for title patterns that suggest discussion
+        title_discussion_patterns = [
+            r'^(rfc|proposal|idea|suggestion|enhancement|feature)[:.]',
+            r'\[(rfc|proposal|idea|suggestion|enhancement|feature)\]',
+            r'\b(thoughts|feedback|opinions)\b.*\?'
+        ]
+        
+        for pattern in title_discussion_patterns:
+            if re.search(pattern, title_lower, re.IGNORECASE):
+                score += 0.25
+                reasons.append("Title suggests discussion format")
+                break
         
         return max(0.0, min(1.0, score)), reasons
     
@@ -467,7 +532,7 @@ class SimilarityService:
         self, 
         owner: str, 
         repo: str, 
-        min_score: float = 0.5,
+        min_score: float = 0.3,
         max_suggestions: int = 20,
         dry_run: bool = True
     ) -> Dict[str, Union[List[Dict], int, str]]:
@@ -545,3 +610,7 @@ class SimilarityService:
             result["message"] = f"Found {len(suggestions)} issues that could be discussions (conversion not implemented)"
         
         return result
+
+
+if __name__ == "__main__":
+    pass

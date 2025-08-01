@@ -240,7 +240,7 @@ def quick(repository, issue_number, index_first, max_issues, top_k):
 
 @cli.command()
 @click.argument("repository", metavar="OWNER/REPO")
-@click.option("--min-score", "-s", default=0.5, help="Minimum discussion score (0.0-1.0)")
+@click.option("--min-score", "-s", default=0.3, help="Minimum discussion score (0.0-1.0)")
 @click.option("--max-suggestions", "-n", default=20, help="Maximum number of suggestions")
 @click.option("--dry-run/--execute", default=True, help="Dry run mode (default) or execute changes")
 def suggest_discussions(repository, min_score, max_suggestions, dry_run):
