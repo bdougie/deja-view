@@ -164,7 +164,8 @@ class TestCLICommands:
         
         assert result.exit_code == 0
         assert "DRY RUN MODE" in result.output
-        assert "How to use feature X?" in result.output
+        # Check for title content (may be wrapped in table)
+        assert "How to use feature" in result.output
         assert "0.75" in result.output
         self.mock_service.suggest_discussions.assert_called_once_with('owner', 'repo', 0.3, 20, True)
     

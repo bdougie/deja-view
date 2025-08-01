@@ -64,12 +64,12 @@ class TestSimilarityService:
         assert service.github_token == 'test-token'
         mock_chroma_client.assert_called_once()
     
-    @patch.dict(os.environ, {})
+    @patch.dict(os.environ, {}, clear=True)
     def test_init_missing_api_key(self):
         with pytest.raises(ValueError, match="CHROMA_API_KEY environment variable is required"):
             SimilarityService()
     
-    @patch.dict(os.environ, {'CHROMA_API_KEY': 'test-key'})
+    @patch.dict(os.environ, {'CHROMA_API_KEY': 'test-key'}, clear=True)
     def test_init_missing_tenant(self):
         with pytest.raises(ValueError, match="CHROMA_TENANT environment variable is required"):
             SimilarityService()
