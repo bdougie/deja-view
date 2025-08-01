@@ -29,6 +29,7 @@ class IndexRequest(BaseModel):
     owner: str = Field(..., description="Repository owner/organization")
     repo: str = Field(..., description="Repository name")
     max_issues: int = Field(100, description="Maximum number of issues to index", ge=1, le=1000)
+    include_discussions: bool = Field(False, description="Also index GitHub discussions")
 
 
 class FindSimilarRequest(BaseModel):
@@ -37,6 +38,14 @@ class FindSimilarRequest(BaseModel):
     issue_number: int = Field(..., description="Issue number to find similar issues for")
     top_k: int = Field(10, description="Number of similar issues to return", ge=1, le=50)
     min_similarity: float = Field(0.0, description="Minimum similarity score", ge=0.0, le=1.0)
+
+
+class SuggestDiscussionsRequest(BaseModel):
+    owner: str = Field(..., description="Repository owner/organization")
+    repo: str = Field(..., description="Repository name")
+    min_score: float = Field(0.5, description="Minimum discussion score", ge=0.0, le=1.0)
+    max_suggestions: int = Field(20, description="Maximum number of suggestions", ge=1, le=100)
+    dry_run: bool = Field(True, description="Dry run mode (no actual changes)")
 
 
 class HealthResponse(BaseModel):
@@ -60,7 +69,8 @@ async def index_repository(request: IndexRequest):
         result = similarity_service.index_repository(
             owner=request.owner,
             repo=request.repo,
-            max_issues=request.max_issues
+            max_issues=request.max_issues,
+            include_discussions=request.include_discussions
         )
         return result
     except requests.exceptions.HTTPError as e:
@@ -115,6 +125,21 @@ async def clear_all_issues():
     try:
         result = similarity_service.clear_all()
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/suggest_discussions")
+async def suggest_discussions(request: SuggestDiscussionsRequest):
+    try:
+        results = similarity_service.suggest_discussions(
+            owner=request.owner,
+            repo=request.repo,
+            min_score=request.min_score,
+            max_suggestions=request.max_suggestions,
+            dry_run=request.dry_run
+        )
+        return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

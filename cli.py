@@ -31,7 +31,8 @@ def cli():
 @cli.command()
 @click.argument("repository", metavar="OWNER/REPO")
 @click.option("--max-issues", "-m", default=100, help="Maximum number of issues to index")
-def index(repository, max_issues):
+@click.option("--include-discussions", "-d", is_flag=True, help="Also index discussions")
+def index(repository, max_issues, include_discussions):
     """Index issues from a GitHub repository"""
     try:
         owner, repo = repository.split("/")
@@ -48,11 +49,15 @@ def index(repository, max_issues):
             console=console,
         ) as progress:
             task = progress.add_task(f"Indexing {repository}...", total=None)
-            result = service.index_repository(owner, repo, max_issues)
+            result = service.index_repository(owner, repo, max_issues, include_discussions)
             progress.update(task, completed=True)
         
+        message = f"[green]✓[/green] Successfully indexed [bold]{result['indexed']}[/bold] items from {result['repository']}"
+        if include_discussions and result.get('discussions', 0) > 0:
+            message += f" ({result['issues']} issues, {result['discussions']} discussions)"
+        
         console.print(Panel(
-            f"[green]✓[/green] Successfully indexed [bold]{result['indexed']}[/bold] issues from {result['repository']}",
+            message,
             title="Indexing Complete",
             border_style="green"
         ))
@@ -100,18 +105,27 @@ def find(issue_url, top_k, min_similarity):
         table.add_column("Title", style="white")
         table.add_column("Similarity", justify="right", width=12)
         table.add_column("State", width=10)
-        table.add_column("Type", width=10)
+        table.add_column("Type", width=12)
         
         for issue in results:
             state_style = "green" if issue["state"] == "open" else "red"
-            type_emoji = "🔀" if issue["is_pull_request"] else "🐛"
+            
+            if issue.get("is_discussion", False):
+                type_emoji = "💬"
+                type_text = "Discussion"
+            elif issue["is_pull_request"]:
+                type_emoji = "🔀"
+                type_text = "PR"
+            else:
+                type_emoji = "🐛"
+                type_text = "Issue"
             
             table.add_row(
                 str(issue["number"]),
                 issue["title"][:60] + "..." if len(issue["title"]) > 60 else issue["title"],
                 format_similarity_score(issue["similarity"]),
                 f"[{state_style}]{issue['state']}[/{state_style}]",
-                f"{type_emoji} {'PR' if issue['is_pull_request'] else 'Issue'}"
+                f"{type_emoji} {type_text}"
             )
         
         console.print(table)
@@ -182,10 +196,9 @@ def quick(repository, issue_number, index_first, max_issues, top_k):
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
                 console=console,
-            ) as progress:
-                task = progress.add_task(f"Indexing {repository}...", total=None)
-                result = service.index_repository(owner, repo, max_issues)
-                progress.update(task, completed=True)
+            ) as progress:task = progress.add_task(f"Indexing {repository}...", total=None)
+            result = service.index_repository(owner, repo, max_issues, False)
+            progress.update(task, completed=True)
             
             console.print(f"[green]✓[/green] Indexed {result['indexed']} issues\n")
         
@@ -219,6 +232,78 @@ def quick(repository, issue_number, index_first, max_issues, top_k):
             )
         
         console.print(table)
+        
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("repository", metavar="OWNER/REPO")
+@click.option("--min-score", "-s", default=0.5, help="Minimum discussion score (0.0-1.0)")
+@click.option("--max-suggestions", "-n", default=20, help="Maximum number of suggestions")
+@click.option("--dry-run/--execute", default=True, help="Dry run mode (default) or execute changes")
+def suggest_discussions(repository, min_score, max_suggestions, dry_run):
+    """Suggest which issues should be GitHub discussions"""
+    try:
+        owner, repo = repository.split("/")
+    except ValueError:
+        console.print("[red]Error: Repository must be in format 'owner/repo'[/red]")
+        sys.exit(1)
+    
+    try:
+        service = SimilarityService()
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Analyzing issues...", total=None)
+            result = service.suggest_discussions(owner, repo, min_score, max_suggestions, dry_run)
+            progress.update(task, completed=True)
+        
+        suggestions = result["suggestions"]
+        
+        if not suggestions:
+            console.print(f"[yellow]No issues found that should be discussions (min score: {min_score})[/yellow]")
+            return
+        
+        # Show dry run warning
+        if dry_run:
+            console.print(Panel(
+                "[yellow]DRY RUN MODE[/yellow] - No changes will be made\nUse --execute to perform actual conversions",
+                title="⚠️  Warning",
+                border_style="yellow"
+            ))
+        
+        table = Table(title=f"Discussion Suggestions for {repository}", show_header=True, header_style="bold magenta")
+        table.add_column("#", style="cyan", width=8)
+        table.add_column("Title", style="white")
+        table.add_column("Score", justify="right", width=8)
+        table.add_column("State", width=8)
+        table.add_column("Reasons", style="dim")
+        
+        for suggestion in suggestions:
+            state_style = "green" if suggestion["state"] == "open" else "red"
+            score_style = "green" if suggestion["score"] >= 0.7 else "yellow" if suggestion["score"] >= 0.5 else "red"
+            
+            table.add_row(
+                str(suggestion["number"]),
+                suggestion["title"][:50] + "..." if len(suggestion["title"]) > 50 else suggestion["title"],
+                f"[{score_style}]{suggestion['score']:.2f}[/{score_style}]",
+                f"[{state_style}]{suggestion['state']}[/{state_style}]",
+                ", ".join(suggestion["reasons"][:2]) + ("..." if len(suggestion["reasons"]) > 2 else "")
+            )
+        
+        console.print(table)
+        
+        # Summary
+        console.print(f"\n[dim]Analyzed {result['total_analyzed']} issues, found {len(suggestions)} suggestions[/dim]")
+        console.print(f"[dim]View issues at: https://github.com/{owner}/{repo}/issues[/dim]")
+        
+        if dry_run:
+            console.print(f"\n[yellow]Tip:[/yellow] Use [bold]--execute[/bold] flag to convert these issues to discussions")
         
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")

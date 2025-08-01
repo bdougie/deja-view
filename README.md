@@ -5,6 +5,9 @@ Find similar GitHub issues using semantic search powered by Chroma vector databa
 ## Features
 
 - **Semantic Search**: Find similar issues based on content, not just keywords
+- **Discussion Suggestions**: AI-powered suggestions for converting issues to discussions
+- **Discussions Support**: Index and search GitHub discussions alongside issues
+- **Dry-Run Mode**: Safe preview of changes before execution
 - **Dual Interface**: Use as CLI tool or REST API
 - **Fast Indexing**: Index hundreds of issues in seconds
 - **Rich CLI**: Beautiful terminal interface with progress indicators
@@ -21,6 +24,22 @@ Find similar GitHub issues using semantic search powered by Chroma vector databa
 ### Installation
 
 ```bash
+# Index repository with discussions
+$ python cli.py index continuedev/continue --include-discussions
+✓ Successfully indexed 250 items from continuedev/continue (200 issues, 50 discussions)
+
+# Suggest discussions (dry-run mode)
+$ python cli.py suggest-discussions continuedev/continue
+┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ #      ┃ Title                        ┃ Score  ┃ State  ┃ Reasons              ┃
+┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ 1423   │ How to configure models?     │ 0.85   │ open   │ Question pattern     │
+│ 987    │ Feature request: dark theme  │ 0.72   │ open   │ Feature request      │
+└────────┴─────────────────────┴────────┴────────┴────────────────────────┘
+
+Analyzed 180 issues, found 2 suggestions
+Tip: Use --execute flag to convert these issues to discussions
+```
 # Clone the repository
 git clone https://github.com/yourusername/deja-view.git
 cd deja-view
@@ -38,11 +57,20 @@ cp .env.example .env
 #### CLI Tool
 
 ```bash
-# Index a repository
+# Index a repository (issues only)
 python cli.py index continuedev/continue --max-issues 200
+
+# Index with discussions
+python cli.py index continuedev/continue --max-issues 200 --include-discussions
 
 # Find similar issues or PRs
 python cli.py find https://github.com/continuedev/continue/pull/2000
+
+# Suggest which issues should be discussions (dry-run)
+python cli.py suggest-discussions continuedev/continue
+
+# Execute discussion suggestions
+python cli.py suggest-discussions continuedev/continue --execute
 
 # Quick command (index + find)
 python cli.py quick continuedev/continue 2000 --index-first
@@ -73,8 +101,9 @@ python demo_client.py
 
 ## API Endpoints
 
-- `POST /index` - Index repository issues
+- `POST /index` - Index repository issues and discussions
 - `POST /find_similar` - Find similar issues
+- `POST /suggest_discussions` - Suggest issues to convert to discussions
 - `GET /stats` - Get database statistics
 - `DELETE /clear` - Clear all data
 - `GET /health` - Health check
@@ -83,6 +112,7 @@ python demo_client.py
 
 - `cli.py index OWNER/REPO` - Index a repository
 - `cli.py find ISSUE_URL` - Find similar issues to a specific issue/PR
+- `cli.py suggest-discussions OWNER/REPO` - Suggest issues to convert to discussions
 - `cli.py quick OWNER/REPO ISSUE_NUMBER` - Quick command to find similar issues
 - `cli.py stats` - Show statistics about indexed issues
 - `cli.py clear` - Clear all indexed issues
@@ -92,11 +122,12 @@ python demo_client.py
 ```python
 import requests
 
-# Index repository
+# Index repository with discussions
 requests.post("http://localhost:8000/index", json={
     "owner": "continuedev",
     "repo": "continue",
-    "max_issues": 200
+    "max_issues": 200,
+    "include_discussions": True
 })
 
 # Find similar issues or PRs
@@ -108,6 +139,16 @@ response = requests.post("http://localhost:8000/find_similar", json={
 })
 
 similar_issues = response.json()["similar_issues"]
+
+# Suggest discussions (dry-run)
+response = requests.post("http://localhost:8000/suggest_discussions", json={
+    "owner": "continuedev",
+    "repo": "continue",
+    "min_score": 0.5,
+    "dry_run": True
+})
+
+suggestions = response.json()["suggestions"]
 ```
 
 ## CLI Examples
