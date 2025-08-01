@@ -13,7 +13,7 @@ jobs:
     
     steps:
       - name: Find and Comment Similar Issues
-        uses: yourusername/deja-view@v1  # Replace with your action path
+        uses: bdougie/deja-view@main  # Replace with your action path
         with:
           chroma-api-key: ${{ secrets.CHROMA_API_KEY }}
           chroma-tenant: ${{ secrets.CHROMA_TENANT }}
