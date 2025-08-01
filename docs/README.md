@@ -10,16 +10,21 @@ Deja View helps you:
 - 💬 Suggest which issues should be discussions
 - 🚀 Reduce duplicate issue reports
 
-## Quick Links
+## Documentation Index
 
 ### Getting Started
 - [Setup Guide](setup-guide.md) - Install and configure Deja View
 - [Architecture Overview](architecture.md) - Understand the system design
 
 ### Usage Guides
-- [CLI Usage](cli-usage.md) - Command-line interface guide
-- [GitHub Action](github-action.md) - Automated issue similarity detection
-- [API Reference](api-reference.md) - REST API documentation
+- [CLI Usage Guide](cli-usage.md) - Complete command-line interface guide with examples
+- [GitHub Action Guide](github-action.md) - Automated issue similarity detection setup
+- [API Reference](api-reference.md) - REST API documentation with endpoints
+
+### Additional Resources
+- [CLI Guide](cli-guide.md) - Quick CLI reference
+- [GitHub Action Guide (Extended)](github-action-guide.md) - Detailed action configuration
+- [Demo Walkthrough](demo.md) - 2-3 minute presentation script
 
 ## Key Features
 
