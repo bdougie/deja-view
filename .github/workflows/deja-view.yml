@@ -1,0 +1,26 @@
+name: Deja View - Find Similar Issues
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  find-similar:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    
+    steps:
+      - name: Find and Comment Similar Issues
+        uses: yourusername/deja-view@v1  # Replace with your action path
+        with:
+          chroma-api-key: ${{ secrets.CHROMA_API_KEY }}
+          chroma-tenant: ${{ secrets.CHROMA_TENANT }}
+          chroma-database: ${{ secrets.CHROMA_DATABASE }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          max-issues: 200
+          similarity-threshold: 0.7
+          max-similar-issues: 5
+          include-discussions: false
+          index-on-run: true

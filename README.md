@@ -7,8 +7,9 @@ Find similar GitHub issues using semantic search powered by Chroma vector databa
 - **Semantic Search**: Find similar issues based on content, not just keywords
 - **Discussion Suggestions**: AI-powered suggestions for converting issues to discussions
 - **Discussions Support**: Index and search GitHub discussions alongside issues
+- **GitHub Action**: Automatically comment on new issues with similar existing issues
 - **Dry-Run Mode**: Safe preview of changes before execution
-- **Dual Interface**: Use as CLI tool or REST API
+- **Triple Interface**: Use as CLI tool, REST API, or GitHub Action
 - **Fast Indexing**: Index hundreds of issues in seconds
 - **Rich CLI**: Beautiful terminal interface with progress indicators
 - **RESTful API**: Full OpenAPI documentation at `/docs`
@@ -182,6 +183,120 @@ $ uv run cli.py find https://github.com/continuedev/continue/pull/2000
 3. **Search**: Uses cosine similarity to find related issues
 4. **Results**: Returns ranked issues with similarity scores
 
+## GitHub Action Usage
+
+Deja View can automatically comment on new issues with similar existing issues. This helps reduce duplicates and connects related discussions.
+
+### Quick Setup
+
+1. Add the action to your workflow (`.github/workflows/deja-view.yml`):
+
+```yaml
+name: Find Similar Issues
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  find-similar:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    
+    steps:
+      - name: Find and Comment Similar Issues
+        uses: yourusername/deja-view@v1
+        with:
+          chroma-api-key: ${{ secrets.CHROMA_API_KEY }}
+          chroma-tenant: ${{ secrets.CHROMA_TENANT }}
+          chroma-database: ${{ secrets.CHROMA_DATABASE }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+2. Add your Chroma credentials as repository secrets:
+   - `CHROMA_API_KEY` - Your Chroma Cloud API key
+   - `CHROMA_TENANT` - Your Chroma tenant ID
+   - `CHROMA_DATABASE` - Your database name (optional, defaults to "default-database")
+
+### Configuration Options
+
+| Input | Description | Default |
+|-------|-------------|---------|
+| `chroma-api-key` | Chroma Cloud API key | Required |
+| `chroma-tenant` | Chroma Cloud tenant ID | Required |
+| `chroma-database` | Database name | `default-database` |
+| `github-token` | GitHub token for API access | `${{ github.token }}` |
+| `max-issues` | Maximum issues to index | `200` |
+| `similarity-threshold` | Minimum similarity score (0-1) | `0.7` |
+| `max-similar-issues` | Max similar issues to show | `5` |
+| `index-on-run` | Re-index repository each run | `true` |
+| `include-discussions` | Include discussions in search | `false` |
+| `comment-template` | Custom comment template | See below |
+
+### Custom Comment Template
+
+You can customize the comment format using the `comment-template` input:
+
+```yaml
+comment-template: |
+  ## 👀 Related Issues
+  
+  Hey @${{ github.event.issue.user.login }}, I found these similar issues:
+  
+  {issues_table}
+  
+  _Please check if any of these solve your problem!_
+```
+
+The `{issues_table}` placeholder will be replaced with a formatted table of similar issues.
+
+### Advanced Example
+
+```yaml
+name: Smart Issue Management
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  find-similar:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    
+    steps:
+      - name: Find Similar Issues
+        uses: yourusername/deja-view@v1
+        with:
+          chroma-api-key: ${{ secrets.CHROMA_API_KEY }}
+          chroma-tenant: ${{ secrets.CHROMA_TENANT }}
+          max-issues: 500
+          similarity-threshold: 0.8
+          max-similar-issues: 3
+          include-discussions: true
+          comment-template: |
+            ## 🔍 Similar Issues and Discussions
+            
+            I found these related items that might help:
+            
+            {issues_table}
+            
+            💡 **Tip**: If this is a question or feature request, consider starting a [discussion](https://github.com/${{ github.repository }}/discussions) instead!
+```
+
+### Local Development
+
+When using this repository as a GitHub Action, it will use the `Dockerfile` to build and run the action. The action will:
+
+1. Check if the event is a new issue (not a PR)
+2. Optionally re-index your repository 
+3. Find similar issues using semantic search
+4. Post a helpful comment if similar issues are found
+
 ## Development
 
 ```bash
@@ -191,6 +306,10 @@ uv run uvicorn api:app --reload
 # Make CLI executable
 chmod +x cli.py
 ./cli.py --help
+
+# Test the GitHub Action locally
+docker build -t deja-view-action .
+# Set up environment variables and run
 ```
 
 ## License
