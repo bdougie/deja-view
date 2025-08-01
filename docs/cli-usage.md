@@ -10,6 +10,26 @@ pip install -r requirements.txt
 uv pip install -r requirements.txt
 ```
 
+## Command Overview
+
+```bash
+$ python cli.py --help
+Usage: cli.py [OPTIONS] COMMAND [ARGS]...
+
+  Deja View - Find similar GitHub issues using semantic search
+
+Commands:
+  index                Index repository issues and discussions
+  find                 Find similar issues to a specific issue/PR
+  suggest-discussions  Suggest issues to convert to discussions
+  quick                Quick command to find similar issues
+  stats                Show statistics about indexed issues
+  clear                Clear all indexed issues
+
+Options:
+  --help  Show this message and exit.
+```
+
 ## Configuration
 
 Set required environment variables:
@@ -35,6 +55,16 @@ python cli.py index facebook/react
 python cli.py index microsoft/vscode
 ```
 
+**Example Output:**
+```
+$ python cli.py index continuedev/continue
+✓ Successfully indexed 200 issues from continuedev/continue
+
+# With discussions included
+$ python cli.py index continuedev/continue --include-discussions
+✓ Successfully indexed 250 items from continuedev/continue (200 issues, 50 discussions)
+```
+
 **Options:**
 - Progress bar shows indexing status
 - Handles both issues and discussions
@@ -50,6 +80,17 @@ python cli.py find ISSUE_URL
 # Examples
 python cli.py find https://github.com/facebook/react/issues/1234
 python cli.py find https://github.com/microsoft/vscode/pull/5678
+```
+
+**Example Output:**
+```
+$ python cli.py find https://github.com/continuedev/continue/pull/2000
+┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┓
+┃ #      ┃ Title                                 ┃ Similarity ┃ State  ┃
+┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━┩
+│ 1995   │ Add support for custom models         │ 87.3%      │ open   │
+│ 1234   │ Model configuration improvements      │ 85.1%      │ closed │
+└────────┴───────────────────────────────────────┴────────────┴────────┘
 ```
 
 **Options:**
@@ -72,6 +113,21 @@ python cli.py quick OWNER/REPO ISSUE_NUMBER
 python cli.py quick facebook/react 1234
 ```
 
+**Example Output:**
+```
+$ python cli.py quick continuedev/continue 2000 --index-first
+✓ Successfully indexed 200 issues from continuedev/continue
+
+Searching for similar issues to #2000...
+
+┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┓
+┃ #      ┃ Title                                 ┃ Similarity ┃ State  ┃
+┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━┩
+│ 1995   │ Add support for custom models         │ 87.3%      │ open   │
+│ 1234   │ Model configuration improvements      │ 85.1%      │ closed │
+└────────┴───────────────────────────────────────┴────────────┴────────┘
+```
+
 **Workflow:**
 1. Indexes the repository if not already done
 2. Immediately searches for similar issues
@@ -88,10 +144,25 @@ python cli.py suggest-discussions OWNER/REPO
 python cli.py suggest-discussions facebook/react
 ```
 
+**Example Output:**
+```
+$ python cli.py suggest-discussions continuedev/continue
+┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ #      ┃ Title                        ┃ Score  ┃ State  ┃ Reasons                ┃
+┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ 1423   │ How to configure models?     │ 0.85   │ open   │ Question pattern       │
+│ 987    │ Feature request: dark theme  │ 0.72   │ open   │ Feature request        │
+└────────┴──────────────────────────────┴────────┴────────┴────────────────────────┘
+
+Analyzed 180 issues, found 2 suggestions
+Tip: Use --execute flag to convert these issues to discussions
+```
+
 **Options:**
 - `--threshold`: Minimum score for suggestions (default: 0.7)
 - `--limit`: Maximum suggestions (default: 10)
-- `--dry-run`: Preview without making changes
+- `--dry-run`: Preview without making changes (default: true)
+- `--execute`: Actually convert issues to discussions
 
 **Analysis Criteria:**
 - Questions and help requests
@@ -105,6 +176,21 @@ Show database statistics:
 
 ```bash
 python cli.py stats
+```
+
+**Example Output:**
+```
+$ python cli.py stats
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━┓
+┃ Repository                 ┃ Issues ┃ Discussions ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━┩
+│ continuedev/continue       │ 200    │ 50          │
+│ microsoft/vscode           │ 500    │ 120         │
+│ facebook/react             │ 350    │ 80          │
+└────────────────────────────┴────────┴─────────────┘
+
+Total repositories: 3
+Total documents: 1,300
 ```
 
 **Shows:**
@@ -121,6 +207,15 @@ Remove all indexed data:
 python cli.py clear
 ```
 
+**Example Output:**
+```
+$ python cli.py clear
+⚠️  Warning: This will delete all indexed data!
+Are you sure? (y/N): y
+
+✓ Successfully cleared all collections
+```
+
 **Warning:** This permanently deletes all indexed issues and discussions.
 
 ## Advanced Usage
@@ -130,11 +225,21 @@ python cli.py clear
 ```bash
 # Index multiple repositories
 for repo in facebook/react microsoft/vscode google/material-ui; do
+    echo "Indexing $repo..."
     python cli.py index $repo
 done
 
 # Find similar issues across multiple searches
 python cli.py find https://github.com/facebook/react/issues/1234 --limit 10
+
+# Batch process multiple issues
+for issue in 1234 5678 9012; do
+    echo "Finding similar to #$issue..."
+    python cli.py find https://github.com/continuedev/continue/issues/$issue
+done
+
+# Export results to file
+python cli.py find https://github.com/continuedev/continue/issues/2000 > similar_issues.txt
 ```
 
 ### Using with CI/CD
@@ -192,3 +297,53 @@ Common errors and solutions:
 4. **Integration**
    - Combine with GitHub Actions for automation
    - Use REST API for programmatic access
+
+## Real-World Examples
+
+### Finding Duplicate Issues
+
+```bash
+# Before opening a new issue, check for duplicates
+$ python cli.py find https://github.com/continuedev/continue/issues/new
+
+# Find very similar issues only (high threshold)
+$ python cli.py find https://github.com/continuedev/continue/issues/2000 --threshold 0.8
+
+# Get more results for broader search
+$ python cli.py find https://github.com/continuedev/continue/issues/2000 --limit 20 --threshold 0.4
+```
+
+### Repository Maintenance
+
+```bash
+# Regular indexing with discussions
+$ python cli.py index continuedev/continue --include-discussions
+
+# Find and convert discussion candidates
+$ python cli.py suggest-discussions continuedev/continue --dry-run
+$ python cli.py suggest-discussions continuedev/continue --execute
+
+# Monitor repository growth
+$ python cli.py stats | grep continuedev/continue
+```
+
+### Automation Scripts
+
+```bash
+#!/bin/bash
+# daily-index.sh - Run daily to keep index fresh
+
+REPOS=(
+    "continuedev/continue"
+    "microsoft/vscode"
+    "facebook/react"
+)
+
+for repo in "${REPOS[@]}"; do
+    echo "Indexing $repo at $(date)"
+    python cli.py index "$repo" --include-discussions
+    sleep 5  # Be nice to GitHub API
+done
+
+python cli.py stats
+```
