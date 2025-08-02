@@ -15,7 +15,7 @@ How many times have you searched through hundreds of issues trying to find if so
 But watch this:"
 
 ```bash
-$ python cli.py find https://github.com/continuedev/continue/pull/2000
+$ uv run cli.py find https://github.com/continuedev/continue/pull/2000
 ```
 
 *Show output:*
@@ -38,11 +38,11 @@ $ python cli.py find https://github.com/continuedev/continue/pull/2000
 
 ```bash
 # Index a repository
-$ python cli.py index continuedev/continue
+$ uv run cli.py index continuedev/continue
 ✓ Successfully indexed 200 issues from continuedev/continue
 
 # Find similar issues instantly
-$ python cli.py quick continuedev/continue 2000
+$ uv run cli.py quick continuedev/continue 2000
 ```
 
 ### 2. GitHub Action (15 seconds)
@@ -64,7 +64,7 @@ $ python cli.py quick continuedev/continue 2000
 
 ```bash
 # Start API server
-$ python api.py
+$ uv run api.py
 
 # Find similar issues programmatically
 curl -X POST http://localhost:8000/find_similar \
@@ -76,7 +76,7 @@ curl -X POST http://localhost:8000/find_similar \
 "Here's something special - Deja View can suggest which issues should be GitHub discussions:"
 
 ```bash
-$ python cli.py suggest-discussions continuedev/continue
+$ uv run cli.py suggest-discussions continuedev/continue
 ```
 
 *Show output:*
@@ -102,14 +102,14 @@ The best part? It takes just 5 minutes to set up:"
 
 ```bash
 # Install
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 
 # Configure
 export CHROMA_API_KEY="your-key"
 export CHROMA_TENANT="your-tenant"
 
 # Start finding duplicates!
-python cli.py index your/repo
+uv run cli.py index your/repo
 ```
 
 ## Closing (15 seconds)
@@ -147,11 +147,11 @@ For shorter demos, focus on:
 Before the demo:
 ```bash
 # Pre-index the repository
-python cli.py index continuedev/continue
+uv run cli.py index continuedev/continue
 
 # Have example issue URL ready
 export DEMO_ISSUE="https://github.com/continuedev/continue/pull/2000"
 
 # Start API server in background
-python api.py &
+uv run api.py &
 ```
