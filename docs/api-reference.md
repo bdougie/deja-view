@@ -29,13 +29,14 @@ The API will be available at `http://localhost:8000` with interactive docs at `h
 ### Basic Example
 
 ```bash
-# Index a repository
+# Index a repository (open issues by default)
 curl -X POST "http://localhost:8000/index" \
   -H "Content-Type: application/json" \
   -d '{
     "owner": "microsoft",
     "repo": "vscode",
-    "max_issues": 100
+    "max_issues": 100,
+    "issue_state": "open"
   }'
 
 # Find similar issues
@@ -102,7 +103,8 @@ POST /index
   "owner": "string",                    // Required: Repository owner
   "repo": "string",                     // Required: Repository name
   "max_issues": 100,                    // Optional: Max issues to index (1-1000)
-  "include_discussions": false          // Optional: Include GitHub discussions
+  "include_discussions": false,         // Optional: Include GitHub discussions
+  "issue_state": "open"                 // Optional: Issue state - "open" (default), "closed", or "all"
 }
 ```
 

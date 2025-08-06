@@ -58,8 +58,14 @@ cp .env.example .env
 #### CLI Tool
 
 ```bash
-# Index a repository (issues only)
+# Index a repository (open issues only - default)
 uv run cli.py index continuedev/continue --max-issues 200
+
+# Index closed issues
+uv run cli.py index continuedev/continue --max-issues 200 --state closed
+
+# Index all issues regardless of state
+uv run cli.py index continuedev/continue --max-issues 200 --state all
 
 # Index with discussions
 uv run cli.py index continuedev/continue --max-issues 200 --include-discussions
@@ -111,12 +117,17 @@ uv run demo_client.py
 
 ## CLI Commands
 
-- `cli.py index OWNER/REPO` - Index a repository
+- `cli.py index OWNER/REPO [--state open|closed|all]` - Index repository issues (default: open)
 - `cli.py find ISSUE_URL` - Find similar issues to a specific issue/PR
 - `cli.py suggest-discussions OWNER/REPO` - Suggest issues to convert to discussions
 - `cli.py quick OWNER/REPO ISSUE_NUMBER` - Quick command to find similar issues
 - `cli.py stats` - Show statistics about indexed issues
 - `cli.py clear` - Clear all indexed issues
+
+### Index Command Options
+- `--max-issues`: Maximum number of issues to index (default: 100)
+- `--state`: Issue state to index - `open` (default), `closed`, or `all`
+- `--include-discussions`: Also index GitHub discussions
 
 ## Example: Find Similar Issues
 

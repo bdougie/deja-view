@@ -120,7 +120,7 @@ class SimilarityService:
             headers["Authorization"] = f"Bearer {self.github_token}"
         return headers
     
-    def _fetch_issues(self, owner: str, repo: str, max_issues: int = 100) -> List[Issue]:
+    def _fetch_issues(self, owner: str, repo: str, max_issues: int = 100, state: str = "open") -> List[Issue]:
         issues = []
         page = 1
         per_page = min(100, max_issues)
@@ -128,7 +128,7 @@ class SimilarityService:
         while len(issues) < max_issues:
             url = f"https://api.github.com/repos/{owner}/{repo}/issues"
             params = {
-                "state": "all",
+                "state": state,
                 "per_page": per_page,
                 "page": page,
                 "sort": "updated",
@@ -297,8 +297,8 @@ class SimilarityService:
         
         return discussions[:max_discussions]
     
-    def index_repository(self, owner: str, repo: str, max_issues: int = 100, include_discussions: bool = False) -> Dict[str, Union[int, str]]:
-        issues = self._fetch_issues(owner, repo, max_issues)
+    def index_repository(self, owner: str, repo: str, max_issues: int = 100, include_discussions: bool = False, issue_state: str = "open") -> Dict[str, Union[int, str]]:
+        issues = self._fetch_issues(owner, repo, max_issues, state=issue_state)
         discussions = []
         
         if include_discussions:

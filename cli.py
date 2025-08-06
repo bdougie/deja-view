@@ -32,7 +32,8 @@ def cli():
 @click.argument("repository", metavar="OWNER/REPO")
 @click.option("--max-issues", "-m", default=100, help="Maximum number of issues to index")
 @click.option("--include-discussions", "-d", is_flag=True, help="Also index discussions")
-def index(repository, max_issues, include_discussions):
+@click.option("--state", "-s", type=click.Choice(['open', 'closed', 'all']), default='open', help="Issue state to index (default: open)")
+def index(repository, max_issues, include_discussions, state):
     """Index issues from a GitHub repository"""
     try:
         owner, repo = repository.split("/")
@@ -49,7 +50,7 @@ def index(repository, max_issues, include_discussions):
             console=console,
         ) as progress:
             task = progress.add_task(f"Indexing {repository}...", total=None)
-            result = service.index_repository(owner, repo, max_issues, include_discussions)
+            result = service.index_repository(owner, repo, max_issues, include_discussions, issue_state=state)
             progress.update(task, completed=True)
         
         message = f"[green]✓[/green] Successfully indexed [bold]{result['indexed']}[/bold] items from {result['repository']}"

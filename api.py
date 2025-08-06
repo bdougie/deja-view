@@ -30,6 +30,7 @@ class IndexRequest(BaseModel):
     repo: str = Field(..., description="Repository name")
     max_issues: int = Field(100, description="Maximum number of issues to index", ge=1, le=1000)
     include_discussions: bool = Field(False, description="Also index GitHub discussions")
+    issue_state: str = Field("open", description="Issue state to index: open, closed, or all")
 
 
 class FindSimilarRequest(BaseModel):
@@ -70,7 +71,8 @@ async def index_repository(request: IndexRequest):
             owner=request.owner,
             repo=request.repo,
             max_issues=request.max_issues,
-            include_discussions=request.include_discussions
+            include_discussions=request.include_discussions,
+            issue_state=request.issue_state
         )
         return result
     except requests.exceptions.HTTPError as e:

@@ -45,14 +45,16 @@ export GITHUB_TOKEN="your-github-token"  # Optional, for higher rate limits
 
 ### Index Repository
 
-Index all issues and discussions from a repository:
+Index issues from a repository with flexible filtering:
 
 ```bash
-python cli.py index OWNER/REPO
+python cli.py index OWNER/REPO [OPTIONS]
 
 # Examples
-python cli.py index facebook/react
-python cli.py index microsoft/vscode
+python cli.py index facebook/react                        # Index open issues (default)
+python cli.py index microsoft/vscode --state closed       # Index closed issues only
+python cli.py index google/material-ui --state all        # Index all issues
+python cli.py index continuedev/continue --include-discussions --state open
 ```
 
 **Example Output:**
@@ -60,14 +62,20 @@ python cli.py index microsoft/vscode
 $ python cli.py index continuedev/continue
 ✓ Successfully indexed 200 issues from continuedev/continue
 
+# With state filter
+$ python cli.py index continuedev/continue --state open
+✓ Successfully indexed 150 open issues from continuedev/continue
+
 # With discussions included
-$ python cli.py index continuedev/continue --include-discussions
-✓ Successfully indexed 250 items from continuedev/continue (200 issues, 50 discussions)
+$ python cli.py index continuedev/continue --include-discussions --state all
+✓ Successfully indexed 350 items from continuedev/continue (300 issues, 50 discussions)
 ```
 
 **Options:**
+- `--max-issues, -m`: Maximum number of issues to index (default: 100)
+- `--state, -s`: Issue state filter - `open` (default), `closed`, or `all`
+- `--include-discussions, -d`: Include GitHub discussions in indexing
 - Progress bar shows indexing status
-- Handles both issues and discussions
 - Respects GitHub rate limits
 
 ### Find Similar Issues
