@@ -10,6 +10,7 @@ import os
 from datetime import datetime
 
 from github_similarity_service import SimilarityService
+from gh_auth_helper import ensure_gh_auth, format_auth_check_message
 
 console = Console()
 
@@ -25,9 +26,20 @@ def format_similarity_score(score: float) -> str:
 
 @click.group()
 @click.version_option(version="1.0.0")
-def cli():
+@click.pass_context
+def cli(ctx):
     """GitHub Issues Similarity CLI - Find similar issues using semantic search"""
-    pass
+    # Check GitHub CLI authentication for commands that need it
+    # Skip auth check for --help and --version
+    if ctx.invoked_subcommand and '--help' not in sys.argv and '--version' not in sys.argv:
+        # Commands that require GitHub CLI authentication
+        gh_required_commands = ['user-comments', 'index', 'find', 'suggest-discussions', 'quick', 'find-duplicates']
+        
+        if ctx.invoked_subcommand in gh_required_commands:
+            is_auth, username = ensure_gh_auth(exit_on_failure=True, context="The deja-view CLI")
+            if is_auth and username:
+                # Store username in context for use by commands
+                ctx.obj = {'github_user': username}
 
 
 @cli.command()
@@ -593,14 +605,7 @@ def user_comments(user, limit, repo, since):
             console.print(f"[dim]{i}. {comment['comment_url']}[/dim]")
         
     except subprocess.CalledProcessError as e:
-        if "gh: command not found" in str(e.stderr):
-            console.print("[red]Error: GitHub CLI (gh) is not installed.[/red]")
-            console.print("[yellow]Install it from: https://cli.github.com[/yellow]")
-        elif "not authenticated" in str(e.stderr):
-            console.print("[red]Error: Not authenticated with GitHub CLI.[/red]")
-            console.print("[yellow]Run: gh auth login[/yellow]")
-        else:
-            console.print(f"[red]Error executing gh command: {e.stderr}[/red]")
+        console.print(f"[red]Error executing gh command: {e.stderr}[/red]")
         sys.exit(1)
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")
