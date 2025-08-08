@@ -47,6 +47,7 @@ class SuggestDiscussionsRequest(BaseModel):
     min_score: float = Field(0.5, description="Minimum discussion score", ge=0.0, le=1.0)
     max_suggestions: int = Field(20, description="Maximum number of suggestions", ge=1, le=100)
     dry_run: bool = Field(True, description="Dry run mode (no actual changes)")
+    add_labels: bool = Field(False, description="Add labels to suggested issues based on confidence level")
 
 
 class HealthResponse(BaseModel):
@@ -141,6 +142,44 @@ async def suggest_discussions(request: SuggestDiscussionsRequest):
             max_suggestions=request.max_suggestions,
             dry_run=request.dry_run
         )
+        
+        # Apply labels if requested and not in dry run
+        if request.add_labels and not request.dry_run:
+            labels_config = {
+                "should-be-discussion": "8B5CF6",  # Purple
+                "discussion": "0E7490",  # Teal
+            }
+            
+            # Ensure labels exist
+            similarity_service.ensure_labels_exist(request.owner, request.repo, labels_config)
+            
+            labeled_issues = []
+            for suggestion in results.get("suggestions", []):
+                confidence = suggestion.get("confidence", "low")
+                labels_to_add = []
+                
+                if confidence == "high":
+                    labels_to_add.append("should-be-discussion")
+                elif confidence == "medium":
+                    labels_to_add.append("discussion")
+                
+                if labels_to_add:
+                    success = similarity_service.add_issue_labels(
+                        request.owner, 
+                        request.repo, 
+                        suggestion["number"], 
+                        labels_to_add
+                    )
+                    if success:
+                        labeled_issues.append({
+                            "number": suggestion["number"],
+                            "labels": labels_to_add,
+                            "confidence": confidence
+                        })
+            
+            results["labeled_issues"] = labeled_issues
+            results["labels_applied"] = len(labeled_issues) > 0
+        
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

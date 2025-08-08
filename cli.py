@@ -71,7 +71,8 @@ def index(repository, max_issues, include_discussions, state):
 @click.argument("issue_url", metavar="ISSUE_URL")
 @click.option("--top-k", "-k", default=10, help="Number of similar issues to return")
 @click.option("--min-similarity", "-s", default=0.0, help="Minimum similarity score (0-1)")
-def find(issue_url, top_k, min_similarity):
+@click.option("--label-duplicate", is_flag=True, help="Add 'potential-duplicate' label if high similarity found")
+def find(issue_url, top_k, min_similarity, label_duplicate):
     """Find similar issues to a specific GitHub issue or PR"""
     try:
         parts = issue_url.replace("https://github.com/", "").split("/")
@@ -131,6 +132,24 @@ def find(issue_url, top_k, min_similarity):
         
         console.print(table)
         console.print(f"\n[dim]View issues at: https://github.com/{owner}/{repo}/issues[/dim]")
+        
+        # Check for potential duplicate and label if requested
+        if label_duplicate and results:
+            highest_similarity = results[0]["similarity"]
+            if highest_similarity >= 0.9:
+                console.print(f"\n[yellow]High similarity detected ({highest_similarity:.1%})[/yellow]")
+                
+                # Ensure label exists
+                labels_config = {"potential-duplicate": "DC2626"}  # Red
+                service.ensure_labels_exist(owner, repo, labels_config)
+                
+                # Add label to the issue
+                if service.add_issue_labels(owner, repo, issue_number, ["potential-duplicate"]):
+                    console.print(f"[green]✓[/green] Added 'potential-duplicate' label to issue #{issue_number}")
+                else:
+                    console.print(f"[red]✗[/red] Failed to add label to issue #{issue_number}")
+            else:
+                console.print(f"\n[dim]Highest similarity ({highest_similarity:.1%}) below duplicate threshold (90%)[/dim]")
         
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")
@@ -241,10 +260,12 @@ def quick(repository, issue_number, index_first, max_issues, top_k):
 
 @cli.command()
 @click.argument("repository", metavar="OWNER/REPO")
-@click.option("--min-score", "-s", default=0.3, help="Minimum discussion score (0.0-1.0)")
-@click.option("--max-suggestions", "-n", default=20, help="Maximum number of suggestions")
+@click.option("--min-score", "-s", default=0.5, help="Minimum discussion score (0.0-1.0)")
+@click.option("--max-suggestions", "-n", default=100, help="Maximum number of suggestions")
 @click.option("--dry-run/--execute", default=True, help="Dry run mode (default) or execute changes")
-def suggest_discussions(repository, min_score, max_suggestions, dry_run):
+@click.option("--output", "-o", help="Output markdown file path")
+@click.option("--add-labels", is_flag=True, help="Add labels to suggested issues")
+def suggest_discussions(repository, min_score, max_suggestions, dry_run, output, add_labels):
     """Suggest which issues should be GitHub discussions"""
     try:
         owner, repo = repository.split("/")
@@ -270,6 +291,71 @@ def suggest_discussions(repository, min_score, max_suggestions, dry_run):
             console.print(f"[yellow]No issues found that should be discussions (min score: {min_score})[/yellow]")
             return
         
+        # Generate markdown report if output file specified
+        if output:
+            markdown_content = f"# Discussion Suggestions for {repository}\n\n"
+            markdown_content += f"**Analysis Date:** {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            markdown_content += f"**Total Issues Analyzed:** {result['total_analyzed']}\n"
+            markdown_content += f"**Suggestions Found:** {len(suggestions)} (minimum score: {min_score})\n\n"
+            
+            # Group by confidence level
+            high_confidence = [s for s in suggestions if s['score'] >= 0.7]
+            medium_confidence = [s for s in suggestions if 0.5 <= s['score'] < 0.7]
+            
+            if high_confidence:
+                markdown_content += "## 🟢 High Confidence (≥70%)\n\n"
+                markdown_content += "These issues strongly suggest they should be discussions.\n\n"
+                markdown_content += "| # | Title | Score | State | Reasons |\n"
+                markdown_content += "|---|-------|-------|-------|----------|\n"
+                for s in high_confidence:
+                    state_icon = "🟢" if s['state'] == 'open' else "🔴"
+                    reasons = "<br>".join(f"• {r}" for r in s['reasons'])
+                    markdown_content += f"| [#{s['number']}]({s['url']}) | {s['title']} | {s['score']:.0%} | {state_icon} {s['state']} | {reasons} |\n"
+                markdown_content += "\n"
+            
+            if medium_confidence:
+                markdown_content += "## 🟡 Medium Confidence (50-69%)\n\n"
+                markdown_content += "These issues might be better as discussions.\n\n"
+                markdown_content += "| # | Title | Score | State | Reasons |\n"
+                markdown_content += "|---|-------|-------|-------|----------|\n"
+                for s in medium_confidence:
+                    state_icon = "🟢" if s['state'] == 'open' else "🔴"
+                    reasons = "<br>".join(f"• {r}" for r in s['reasons'])
+                    markdown_content += f"| [#{s['number']}]({s['url']}) | {s['title']} | {s['score']:.0%} | {state_icon} {s['state']} | {reasons} |\n"
+                markdown_content += "\n"
+            
+            # Add summary section
+            markdown_content += "## Summary\n\n"
+            markdown_content += f"- **High Confidence (≥70%):** {len(high_confidence)} issues\n"
+            markdown_content += f"- **Medium Confidence (50-69%):** {len(medium_confidence)} issues\n"
+            markdown_content += f"- **Total Suggestions:** {len(suggestions)} issues\n\n"
+            
+            # Add labeling commands
+            markdown_content += "## Quick Actions\n\n"
+            markdown_content += "### Add Labels via GitHub CLI\n\n"
+            markdown_content += "To label high-confidence issues:\n```bash\n"
+            for s in high_confidence[:10]:  # Limit to first 10 for readability
+                markdown_content += f"gh issue edit {s['number']} --add-label 'should-be-discussion' -R {repository}\n"
+            if len(high_confidence) > 10:
+                markdown_content += f"# ... and {len(high_confidence) - 10} more\n"
+            markdown_content += "```\n\n"
+            
+            markdown_content += "To label medium-confidence issues:\n```bash\n"
+            for s in medium_confidence[:10]:
+                markdown_content += f"gh issue edit {s['number']} --add-label 'discussion' -R {repository}\n"
+            if len(medium_confidence) > 10:
+                markdown_content += f"# ... and {len(medium_confidence) - 10} more\n"
+            markdown_content += "```\n\n"
+            
+            markdown_content += "---\n"
+            markdown_content += "_Generated by [deja-view](https://github.com/bdougie/deja-view)_\n"
+            
+            # Write to file
+            with open(output, 'w') as f:
+                f.write(markdown_content)
+            
+            console.print(f"[green]✓[/green] Markdown report written to: {output}")
+        
         # Show dry run warning
         if dry_run:
             console.print(Panel(
@@ -282,29 +368,77 @@ def suggest_discussions(repository, min_score, max_suggestions, dry_run):
         table.add_column("#", style="cyan", width=8)
         table.add_column("Title", style="white")
         table.add_column("Score", justify="right", width=8)
+        table.add_column("Confidence", justify="center", width=12)
         table.add_column("State", width=8)
         table.add_column("Reasons", style="dim")
         
-        for suggestion in suggestions:
+        for suggestion in suggestions[:20]:  # Show first 20 in console
             state_style = "green" if suggestion["state"] == "open" else "red"
             score_style = "green" if suggestion["score"] >= 0.7 else "yellow" if suggestion["score"] >= 0.5 else "red"
+            
+            # Get confidence level with emoji
+            confidence = suggestion.get("confidence", "low")
+            confidence_emoji = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(confidence, "")
+            confidence_display = f"{confidence_emoji} {confidence.title()}"
             
             table.add_row(
                 str(suggestion["number"]),
                 suggestion["title"][:50] + "..." if len(suggestion["title"]) > 50 else suggestion["title"],
                 f"[{score_style}]{suggestion['score']:.2f}[/{score_style}]",
+                confidence_display,
                 f"[{state_style}]{suggestion['state']}[/{state_style}]",
                 ", ".join(suggestion["reasons"][:2]) + ("..." if len(suggestion["reasons"]) > 2 else "")
             )
         
         console.print(table)
         
+        if len(suggestions) > 20:
+            console.print(f"[dim]... and {len(suggestions) - 20} more suggestions[/dim]")
+        
         # Summary
         console.print(f"\n[dim]Analyzed {result['total_analyzed']} issues, found {len(suggestions)} suggestions[/dim]")
         console.print(f"[dim]View issues at: https://github.com/{owner}/{repo}/issues[/dim]")
         
+        # Apply labels if requested
+        if add_labels and not dry_run:
+            console.print("\n[yellow]Applying labels to issues...[/yellow]")
+            
+            # Define label configurations
+            labels_config = {
+                "should-be-discussion": "8B5CF6",  # Purple
+                "discussion": "0E7490",  # Teal
+                "potential-duplicate": "DC2626"  # Red
+            }
+            
+            # Ensure labels exist
+            service.ensure_labels_exist(owner, repo, labels_config)
+            
+            labeled_count = 0
+            for suggestion in suggestions:
+                labels_to_add = []
+                
+                # Determine which label to add based on confidence
+                confidence = suggestion.get("confidence", "low")
+                if confidence == "high":
+                    labels_to_add.append("should-be-discussion")
+                elif confidence == "medium":
+                    labels_to_add.append("discussion")
+                
+                if labels_to_add:
+                    if service.add_issue_labels(owner, repo, suggestion["number"], labels_to_add):
+                        labeled_count += 1
+                        console.print(f"  [green]✓[/green] Added label to issue #{suggestion['number']}: {', '.join(labels_to_add)}")
+                    else:
+                        console.print(f"  [red]✗[/red] Failed to label issue #{suggestion['number']}")
+            
+            console.print(f"\n[green]Successfully labeled {labeled_count} issues[/green]")
+        elif add_labels and dry_run:
+            console.print("\n[yellow]Note:[/yellow] Labels will be applied when using --execute flag")
+        
         if dry_run:
             console.print(f"\n[yellow]Tip:[/yellow] Use [bold]--execute[/bold] flag to convert these issues to discussions")
+            if not add_labels:
+                console.print(f"[yellow]Tip:[/yellow] Use [bold]--add-labels[/bold] flag to label issues based on confidence")
         
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")

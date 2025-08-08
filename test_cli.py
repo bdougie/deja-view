@@ -153,6 +153,7 @@ class TestCLICommands:
                     'number': 123,
                     'title': 'How to use feature X?',
                     'score': 0.75,
+                    'confidence': 'high',
                     'state': 'open',
                     'reasons': ['Contains question pattern', 'Has question label']
                 }
@@ -165,9 +166,9 @@ class TestCLICommands:
         assert result.exit_code == 0
         assert "DRY RUN MODE" in result.output
         # Check for title content (may be wrapped in table)
-        assert "How to use feature" in result.output
+        assert "How to use" in result.output
         assert "0.75" in result.output
-        self.mock_service.suggest_discussions.assert_called_once_with('owner', 'repo', 0.3, 20, True)
+        self.mock_service.suggest_discussions.assert_called_once_with('owner', 'repo', 0.5, 100, True)
     
     @patch('cli.SimilarityService')
     def test_suggest_discussions_execute(self, mock_service_class):
@@ -181,7 +182,7 @@ class TestCLICommands:
         
         assert result.exit_code == 0
         assert "No issues found that should be discussions" in result.output
-        self.mock_service.suggest_discussions.assert_called_once_with('owner', 'repo', 0.3, 20, False)
+        self.mock_service.suggest_discussions.assert_called_once_with('owner', 'repo', 0.5, 100, False)
     
     @patch('cli.SimilarityService')
     def test_error_handling(self, mock_service_class):

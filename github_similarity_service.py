@@ -297,7 +297,8 @@ class SimilarityService:
         
         return discussions[:max_discussions]
     
-    def index_repository(self, owner: str, repo: str, max_issues: int = 100, include_discussions: bool = False, issue_state: str = "open") -> Dict[str, Union[int, str]]:
+    def index_repository(self, owner: str, repo: str, max_issues: int = 100, include_discussions: bool = False, issue_state: str = "open", batch_size: int = 300) -> Dict[str, Union[int, str]]:
+        """Index repository with automatic batching for large datasets"""
         issues = self._fetch_issues(owner, repo, max_issues, state=issue_state)
         discussions = []
         
@@ -309,60 +310,77 @@ class SimilarityService:
         if not all_items:
             return {"indexed": 0, "repository": f"{owner}/{repo}"}
         
-        documents = []
-        metadatas = []
-        ids = []
+        # Process in batches to respect Chroma's 300 record limit
+        total_indexed = 0
+        total_batches = (len(all_items) + batch_size - 1) // batch_size
         
-        for item in all_items:
-            if isinstance(item, Discussion):
-                doc_id = f"{owner}/{repo}/discussions/{item.number}"
-                metadata = {
-                    "owner": owner,
-                    "repo": repo,
-                    "number": str(item.number),
-                    "title": item.title,
-                    "type": "discussion",
-                    "category": item.category,
-                    "url": item.url,
-                    "created_at": item.created_at,
-                    "updated_at": item.updated_at,
-                    "is_pull_request": "False",
-                    "is_discussion": "True",
-                    "labels": ",".join(item.labels) if item.labels else ""
-                }
-            else:
-                doc_id = f"{owner}/{repo}/issues/{item.number}"
-                metadata = {
-                    "owner": owner,
-                    "repo": repo,
-                    "number": str(item.number),
-                    "title": item.title,
-                    "type": "pull_request" if item.is_pull_request else "issue",
-                    "state": item.state,
-                    "url": item.url,
-                    "created_at": item.created_at,
-                    "updated_at": item.updated_at,
-                    "is_pull_request": str(item.is_pull_request),
-                    "is_discussion": str(item.is_discussion),
-                    "labels": ",".join(item.labels) if item.labels else ""
-                }
+        for batch_num in range(total_batches):
+            start_idx = batch_num * batch_size
+            end_idx = min(start_idx + batch_size, len(all_items))
+            batch_items = all_items[start_idx:end_idx]
             
-            documents.append(self._create_document_text(item))
-            metadatas.append(metadata)
-            ids.append(doc_id)
-        
-        self.collection.upsert(
-            documents=documents,
-            metadatas=metadatas,
-            ids=ids
-        )
+            documents = []
+            metadatas = []
+            ids = []
+            
+            for item in batch_items:
+                if isinstance(item, Discussion):
+                    doc_id = f"{owner}/{repo}/discussions/{item.number}"
+                    metadata = {
+                        "owner": owner,
+                        "repo": repo,
+                        "number": str(item.number),
+                        "title": item.title,
+                        "type": "discussion",
+                        "category": item.category,
+                        "url": item.url,
+                        "created_at": item.created_at,
+                        "updated_at": item.updated_at,
+                        "is_pull_request": "False",
+                        "is_discussion": "True",
+                        "labels": ",".join(item.labels) if item.labels else ""
+                    }
+                else:
+                    doc_id = f"{owner}/{repo}/issues/{item.number}"
+                    metadata = {
+                        "owner": owner,
+                        "repo": repo,
+                        "number": str(item.number),
+                        "title": item.title,
+                        "type": "pull_request" if item.is_pull_request else "issue",
+                        "state": item.state,
+                        "url": item.url,
+                        "created_at": item.created_at,
+                        "updated_at": item.updated_at,
+                        "is_pull_request": str(item.is_pull_request),
+                        "is_discussion": str(item.is_discussion),
+                        "labels": ",".join(item.labels) if item.labels else ""
+                    }
+                
+                documents.append(self._create_document_text(item))
+                metadatas.append(metadata)
+                ids.append(doc_id)
+            
+            # Upsert this batch
+            self.collection.upsert(
+                documents=documents,
+                metadatas=metadatas,
+                ids=ids
+            )
+            
+            total_indexed += len(batch_items)
+            
+            # Print progress if processing multiple batches
+            if total_batches > 1:
+                print(f"  Batch {batch_num + 1}/{total_batches}: Indexed {len(batch_items)} items ({total_indexed}/{len(all_items)} total)")
         
         return {
             "indexed": len(all_items),
             "issues": len(issues),
             "discussions": len(discussions),
             "repository": f"{owner}/{repo}",
-            "message": f"Successfully indexed {len(issues)} issues" + (f" and {len(discussions)} discussions" if discussions else "")
+            "batches": total_batches,
+            "message": f"Successfully indexed {len(issues)} issues" + (f" and {len(discussions)} discussions" if discussions else "") + (f" in {total_batches} batches" if total_batches > 1 else "")
         }
     
     def find_similar_issues(
@@ -580,11 +598,20 @@ class SimilarityService:
             score, reasons = self._calculate_discussion_score(issue)
             
             if score >= min_score:
+                # Calculate confidence level
+                if score >= 0.7:
+                    confidence = "high"
+                elif score >= 0.5:
+                    confidence = "medium"
+                else:
+                    confidence = "low"
+                
                 suggestions.append({
                     "number": issue.number,
                     "title": issue.title,
                     "url": issue.url,
                     "score": round(score, 3),
+                    "confidence": confidence,
                     "reasons": reasons,
                     "state": issue.state,
                     "labels": issue.labels,
@@ -610,6 +637,64 @@ class SimilarityService:
             result["message"] = f"Found {len(suggestions)} issues that could be discussions (conversion not implemented)"
         
         return result
+
+    def add_issue_labels(self, owner: str, repo: str, issue_number: int, labels: List[str]) -> bool:
+        """Add labels to a GitHub issue"""
+        if not self.github_token:
+            raise ValueError("GITHUB_TOKEN required for label management")
+        
+        url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/labels"
+        headers = {
+            "Authorization": f"token {self.github_token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        try:
+            response = requests.post(url, json=labels, headers=headers)
+            response.raise_for_status()
+            return True
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to add labels to issue #{issue_number}: {e}")
+            return False
+    
+    def ensure_labels_exist(self, owner: str, repo: str, labels_config: Dict[str, str]) -> bool:
+        """Ensure labels exist in the repository, create them if not"""
+        if not self.github_token:
+            raise ValueError("GITHUB_TOKEN required for label management")
+        
+        headers = {
+            "Authorization": f"token {self.github_token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        # Get existing labels
+        existing_labels = {}
+        url = f"https://api.github.com/repos/{owner}/{repo}/labels"
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            for label in response.json():
+                existing_labels[label["name"].lower()] = label
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to fetch existing labels: {e}")
+            return False
+        
+        # Create missing labels
+        for label_name, label_color in labels_config.items():
+            if label_name.lower() not in existing_labels:
+                try:
+                    create_url = f"https://api.github.com/repos/{owner}/{repo}/labels"
+                    response = requests.post(
+                        create_url,
+                        json={"name": label_name, "color": label_color},
+                        headers=headers
+                    )
+                    response.raise_for_status()
+                    print(f"Created label: {label_name}")
+                except requests.exceptions.RequestException as e:
+                    print(f"Failed to create label {label_name}: {e}")
+        
+        return True
 
 
 if __name__ == "__main__":
