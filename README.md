@@ -5,7 +5,10 @@ Find similar GitHub issues using semantic search powered by Chroma vector databa
 ## Features
 
 - **Semantic Search**: Find similar issues based on content, not just keywords
+- **Duplicate Detection**: Identify potential duplicate issues across your repository
 - **Discussion Suggestions**: AI-powered suggestions for converting issues to discussions
+- **Report Generation**: Detailed markdown reports with actionable insights
+- **GitHub CLI Integration**: Ready-to-use `gh` commands for batch operations
 - **Discussions Support**: Index and search GitHub discussions alongside issues
 - **GitHub Action**: Automatically comment on new issues with similar existing issues
 - **Dry-Run Mode**: Safe preview of changes before execution
@@ -25,12 +28,17 @@ Find similar GitHub issues using semantic search powered by Chroma vector databa
 ### Installation
 
 ```bash
-# Index repository with discussions
-$ uv run cli.py index continuedev/continue --include-discussions
-✓ Successfully indexed 250 items from continuedev/continue (200 issues, 50 discussions)
+# Index repository with discussions (example: continuedev/continue)
+$ uv run cli.py index owner/repo --include-discussions
+✓ Successfully indexed 250 items from owner/repo (200 issues, 50 discussions)
+
+# Find potential duplicate issues
+$ uv run cli.py find-duplicates owner/repo --threshold 0.75
+✓ Report written to: duplicate-issues-report.md
+Found 86 potential duplicates (41 with ≥90% similarity)
 
 # Suggest discussions (dry-run mode)
-$ uv run cli.py suggest-discussions continuedev/continue
+$ uv run cli.py suggest-discussions owner/repo
 ┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ #      ┃ Title                        ┃ Score  ┃ State  ┃ Reasons              ┃
 ┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
@@ -59,34 +67,41 @@ cp .env.example .env
 
 ```bash
 # Index a repository (open issues only - default)
-uv run cli.py index continuedev/continue --max-issues 200
+uv run cli.py index owner/repo --max-issues 200
 
 # Index closed issues
-uv run cli.py index continuedev/continue --max-issues 200 --state closed
+uv run cli.py index owner/repo --max-issues 200 --state closed
 
 # Index all issues regardless of state
-uv run cli.py index continuedev/continue --max-issues 200 --state all
+uv run cli.py index owner/repo --max-issues 200 --state all
 
 # Index with discussions
-uv run cli.py index continuedev/continue --max-issues 200 --include-discussions
+uv run cli.py index owner/repo --max-issues 200 --include-discussions
 
 # Find similar issues or PRs
-uv run cli.py find https://github.com/continuedev/continue/pull/2000
+uv run cli.py find https://github.com/owner/repo/issues/123
+
+# Find duplicate issues and generate report
+uv run cli.py find-duplicates owner/repo --threshold 0.75 -o duplicates.md
 
 # Suggest which issues should be discussions (dry-run)
-uv run cli.py suggest-discussions continuedev/continue
+uv run cli.py suggest-discussions owner/repo
 
 # Execute discussion suggestions
-uv run cli.py suggest-discussions continuedev/continue --execute
+uv run cli.py suggest-discussions owner/repo --execute
 
 # Quick command (index + find)
-uv run cli.py quick continuedev/continue 2000 --index-first
+uv run cli.py quick owner/repo 123 --index-first
 
 # View statistics
 uv run cli.py stats
 
 # Clear database
 uv run cli.py clear
+
+# Real-world example using continuedev/continue repository
+uv run cli.py index continuedev/continue --max-issues 1000
+uv run cli.py find-duplicates continuedev/continue --threshold 0.8
 ```
 
 #### API Server
@@ -144,9 +159,9 @@ requests.post("http://localhost:8000/index", json={
 
 # Find similar issues or PRs
 response = requests.post("http://localhost:8000/find_similar", json={
-    "owner": "continuedev",
-    "repo": "continue",
-    "issue_number": 2000,
+    "owner": "microsoft",
+    "repo": "vscode",
+    "issue_number": 12345,
     "top_k": 10
 })
 
@@ -154,8 +169,8 @@ similar_issues = response.json()["similar_issues"]
 
 # Suggest discussions (dry-run)
 response = requests.post("http://localhost:8000/suggest_discussions", json={
-    "owner": "continuedev",
-    "repo": "continue",
+    "owner": "microsoft",
+    "repo": "vscode",
     "min_score": 0.5,
     "dry_run": True
 })
@@ -167,17 +182,29 @@ suggestions = response.json()["suggestions"]
 
 ```bash
 # Index repository
-$ uv run cli.py index continuedev/continue
-✓ Successfully indexed 200 issues from continuedev/continue
+$ uv run cli.py index owner/repo
+✓ Successfully indexed 200 issues from owner/repo
 
 # Find similar issues/PRs with URL
-$ uv run cli.py find https://github.com/continuedev/continue/pull/2000
+$ uv run cli.py find https://github.com/owner/repo/issues/123
 ┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┓
 ┃ #      ┃ Title                                 ┃ Similarity ┃ State  ┃
 ┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━┩
-│ 1995   │ Add support for custom models         │ 87.3%      │ open   │
-│ 1234   │ Model configuration improvements      │ 85.1%      │ closed │
+│ 456    │ Add support for custom models         │ 87.3%      │ open   │
+│ 789    │ Model configuration improvements      │ 85.1%      │ closed │
 └────────┴───────────────────────────────────────┴────────────┴────────┘
+
+# Find duplicate issues
+$ uv run cli.py find-duplicates owner/repo --threshold 0.8
+✓ Report written to: duplicate-issues-report.md
+Duplicate Issues Summary
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Similarity       ┃ Count ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ ≥90% (Very High) │    12 │
+│ 80-89% (High)    │    23 │
+│ Total            │    35 │
+└──────────────────┴───────┘
 ```
 
 ## Environment Variables

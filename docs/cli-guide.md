@@ -35,6 +35,7 @@ python cli.py --help
 |---------|---------|---------|
 | `index` | Index repository issues | `python cli.py index microsoft/vscode` |
 | `find` | Find similar issues | `python cli.py find https://github.com/microsoft/vscode/issues/123` |
+| `find-duplicates` | Find potential duplicate issues | `python cli.py find-duplicates microsoft/vscode` |
 | `quick` | Index + find in one command | `python cli.py quick microsoft/vscode 123` |
 | `stats` | Show database statistics | `python cli.py stats` |
 | `clear` | Clear all indexed data | `python cli.py clear` |
@@ -203,6 +204,56 @@ Are you sure you want to clear all indexed issues? [y/N]: y
 ✓ Successfully cleared all indexed issues from the database
 ```
 
+### `find-duplicates` - Find Potential Duplicate Issues
+
+Analyze all indexed issues to find potential duplicates within a repository.
+
+```bash
+python cli.py find-duplicates OWNER/REPO [OPTIONS]
+```
+
+#### Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--threshold, -t` | 0.8 | Similarity threshold for duplicates (0-1) |
+| `--output, -o` | `duplicate-issues-report.md` | Output file for markdown report |
+| `--state` | `all` | Issue state to analyze (open/closed/all) |
+
+#### Examples
+
+```bash
+# Find duplicates in all issues
+python cli.py find-duplicates continuedev/continue
+
+# Find duplicates with 75% similarity threshold
+python cli.py find-duplicates continuedev/continue --threshold 0.75
+
+# Analyze only open issues
+python cli.py find-duplicates continuedev/continue --state open
+
+# Custom output file
+python cli.py find-duplicates continuedev/continue -o my-duplicates.md
+```
+
+#### Output
+
+```
+Analyzing 986 all issues from Chroma index...
+Progress: 50/986 issues analyzed...
+Progress: 100/986 issues analyzed...
+✓ Report written to: duplicate-issues-report.md
+
+Duplicate Issues Summary
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Similarity       ┃ Count ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ ≥90% (Very High) │    41 │
+│ 80-89% (High)    │    45 │
+│ Total            │    86 │
+└──────────────────┴───────┘
+```
+
 ### `suggest-discussions` - Find Issues That Should Be Discussions
 
 Analyze issues to suggest which ones should be converted to GitHub discussions.
@@ -266,6 +317,82 @@ Tip: Use --execute flag to convert these issues to discussions
 - 🔀 **PR**: Pull request
 - 💬 **Discussion**: GitHub discussion
 
+## Report Generation
+
+Both `find-duplicates` and `suggest-discussions` commands generate detailed markdown reports that include:
+
+### Report Features
+
+1. **Summary Statistics**: Overview of findings at the top
+2. **Categorized Results**: Issues grouped by similarity/confidence levels
+3. **GitHub CLI Commands**: Ready-to-use commands for batch operations
+4. **Issue Metadata**: Labels, state, creation date for context
+
+### Example Report Structure
+
+```markdown
+# Duplicate Issues Report for owner/repo
+
+**Analysis Date:** 2025-08-08 12:00:00
+**Issues Analyzed:** 500
+**Potential Duplicates Found:** 86
+
+## 🔴 Very High Similarity (≥90%)
+### [#123: Issue Title](url)
+**Potential duplicates:**
+- 🟢 [#456: Similar Issue](url) (95% similar)
+
+## Quick Actions
+### Add 'potential-duplicate' label:
+```bash
+gh issue edit 123 --add-label 'potential-duplicate' -R owner/repo
+```
+```
+
+## GitHub CLI Integration
+
+The generated reports include GitHub CLI (`gh`) commands for efficient issue management:
+
+### Label Management
+
+```bash
+# Add labels to potential duplicates
+gh issue edit 123 --add-label 'potential-duplicate' -R owner/repo
+
+# Add labels to discussion candidates
+gh issue edit 456 --add-label 'should-be-discussion' -R owner/repo
+
+# Bulk labeling from report
+for issue in 123 456 789; do
+  gh issue edit $issue --add-label 'duplicate' -R owner/repo
+done
+```
+
+### Issue Comments
+
+```bash
+# Comment on an issue with similar issues
+gh issue comment 123 -R owner/repo -b "Similar to #456, #789"
+
+# View issue details
+gh issue view 123 -R owner/repo
+
+# List issues with specific labels
+gh issue list -R owner/repo -l "potential-duplicate"
+```
+
+### Converting to Discussions
+
+```bash
+# Note: GitHub doesn't support direct issue-to-discussion conversion via CLI
+# You'll need to:
+1. Create a discussion with the issue content
+2. Close the issue with a reference to the discussion
+
+# Create discussion (requires GitHub CLI extension)
+gh discussion create -R owner/repo --title "Title" --body "Body"
+```
+
 ## Tips & Best Practices
 
 ### Performance Tips
@@ -273,27 +400,33 @@ Tip: Use --execute flag to convert these issues to discussions
 1. **Start Small**: Index with `--max-issues 100` first, then increase
 2. **Use Filters**: Use `--min-similarity` to reduce noise
 3. **Regular Cleanup**: Use `stats` and `clear` to manage database size
+4. **Chroma Limits**: Note that Chroma Cloud has a 100-document limit per query
 
 ### Workflow Recommendations
 
 1. **One-time Search**: Use `quick` command with `--index-first`
 2. **Regular Use**: Index repositories once, then use `find` repeatedly
 3. **Maintenance**: Check `stats` periodically and `clear` when needed
+4. **Report Review**: Always review reports before applying batch operations
 
 ### Common Use Cases
 
 ```bash
 # Daily workflow: Check for similar issues before filing
-python cli.py find https://github.com/microsoft/vscode/issues/new-issue-url
+python cli.py find https://github.com/owner/repo/issues/new-issue-url
 
 # Repository maintenance: Find all duplicates
-python cli.py find https://github.com/myorg/myrepo/issues/123 --min-similarity 0.8
+python cli.py find-duplicates owner/repo --threshold 0.75 -o duplicates.md
 
 # Issue triage: Explore related issues
-python cli.py find https://github.com/myorg/myrepo/issues/123 --top-k 20 --min-similarity 0.3
+python cli.py find https://github.com/owner/repo/issues/123 --top-k 20
 
 # Repository analysis: Find discussion candidates
-python cli.py suggest-discussions myorg/myrepo --min-score 0.6
+python cli.py suggest-discussions owner/repo --min-score 0.6 -o discussions.md
+
+# Generate and apply labels
+python cli.py find-duplicates owner/repo -o report.md
+# Review report.md, then run the generated gh commands
 ```
 
 ## Error Handling

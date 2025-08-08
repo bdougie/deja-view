@@ -6,6 +6,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.panel import Panel
 from rich import print as rprint
 import sys
+import os
+from datetime import datetime
 
 from github_similarity_service import SimilarityService
 
@@ -442,6 +444,233 @@ def suggest_discussions(repository, min_score, max_suggestions, dry_run, output,
         
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('repository')
+@click.option('-t', '--threshold', default=0.8, help='Similarity threshold for duplicates (0-1)')
+@click.option('-o', '--output', default='duplicate-issues-report.md', help='Output file for markdown report')
+@click.option('--state', type=click.Choice(['open', 'closed', 'all']), default='all', help='Issue state to analyze')
+def find_duplicates(repository, threshold, output, state):
+    """Find potential duplicate issues in a repository using indexed Chroma data"""
+    try:
+        console = Console()
+        service = SimilarityService()
+        
+        # Parse repository
+        parts = repository.split('/')
+        if len(parts) != 2:
+            console.print("[red]Error: Repository must be in format 'owner/repo'[/red]")
+            sys.exit(1)
+        
+        owner, repo = parts
+        
+        with console.status(f"[bold green]Finding duplicate issues in {repository} from indexed data..."):
+            # Get documents from the collection (Chroma Cloud has a limit of 100)
+            # Note: To analyze all 986 issues, you'd need to implement pagination
+            # For now, we'll work with the limit of 100
+            all_docs = service.collection.get(
+                where={"$and": [{"owner": owner}, {"repo": repo}]}
+                # Default limit is 100 due to Chroma Cloud quota
+            )
+            
+            if not all_docs["ids"]:
+                console.print(f"[red]No indexed issues found for {repository}[/red]")
+                console.print("[yellow]Please run: cli.py index {repository}[/yellow]")
+                sys.exit(1)
+            
+            # Filter by state if needed
+            issues_to_analyze = []
+            for i, doc_id in enumerate(all_docs["ids"]):
+                metadata = all_docs["metadatas"][i] if all_docs["metadatas"] else {}
+                issue_state = metadata.get("state", "unknown")
+                
+                if state == "all" or issue_state == state:
+                    # Parse issue number from doc_id (format: owner_repo_number or full URL)
+                    try:
+                        if '/issues/' in doc_id:
+                            issue_number = int(doc_id.split('/issues/')[-1])
+                        else:
+                            issue_number = int(doc_id.split("_")[-1])
+                    except:
+                        continue
+                        
+                    issues_to_analyze.append({
+                        'id': doc_id,
+                        'number': issue_number,
+                        'title': metadata.get('title', ''),
+                        'body': metadata.get('body', ''),
+                        'state': issue_state,
+                        'url': metadata.get('url', ''),
+                        'created_at': metadata.get('created_at', ''),
+                        'labels': metadata.get('labels', '') if isinstance(metadata.get('labels'), str) else metadata.get('labels', []),
+                        'document': all_docs["documents"][i] if all_docs["documents"] else ''
+                    })
+            
+            console.print(f"[cyan]Analyzing {len(issues_to_analyze)} {state} issues from Chroma index...[/cyan]")
+            
+            # Find duplicates for each issue
+            duplicates_found = []
+            
+            for idx, issue in enumerate(issues_to_analyze):
+                if (idx + 1) % 50 == 0:
+                    console.print(f"[dim]Progress: {idx + 1}/{len(issues_to_analyze)} issues analyzed...[/dim]")
+                
+                # Search for similar issues
+                query_text = issue['document'] or f"{issue['title']} {issue['body']}"
+                results = service.collection.query(
+                    query_texts=[query_text],
+                    n_results=10,  # Get more results to find good matches
+                    where={"$and": [{"owner": owner}, {"repo": repo}]}
+                )
+                
+                similar = []
+                if results["ids"] and results["ids"][0]:
+                    for i, doc_id in enumerate(results["ids"][0]):
+                        # Parse issue number from doc_id
+                        try:
+                            if '/issues/' in doc_id:
+                                doc_number = int(doc_id.split('/issues/')[-1])
+                            else:
+                                doc_number = int(doc_id.split("_")[-1])
+                        except:
+                            continue
+                            
+                        # Skip self-match
+                        if doc_number == issue['number']:
+                            continue
+                        
+                        metadata = results["metadatas"][0][i] if results["metadatas"] else {}
+                        distance = results["distances"][0][i] if results["distances"] else 1.0
+                        similarity = 1 - (distance / 2)  # Convert distance to similarity
+                        
+                        if similarity >= threshold:
+                            similar.append({
+                                'number': doc_number,
+                                'title': metadata.get('title', 'Unknown'),
+                                'url': metadata.get('url', f"https://github.com/{repository}/issues/{doc_number}"),
+                                'state': metadata.get('state', 'unknown'),
+                                'similarity': similarity
+                            })
+                
+                if similar:
+                    duplicates_found.append({
+                        'issue': {
+                            'number': issue['number'],
+                            'title': issue['title'],
+                            'url': issue['url'],
+                            'state': issue['state'],
+                            'created_at': issue['created_at'],
+                            'labels': issue['labels']
+                        },
+                        'duplicates': similar[:3],  # Keep top 3 duplicates
+                        'max_similarity': max(s['similarity'] for s in similar)
+                    })
+        
+        # Sort by max similarity
+        duplicates_found.sort(key=lambda x: x['max_similarity'], reverse=True)
+        
+        # Generate markdown report
+        markdown_content = f"# Duplicate Issues Report for {repository}\n\n"
+        markdown_content += f"**Analysis Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        markdown_content += f"**Issues Analyzed:** {len(issues_to_analyze)} {state} issues\n"
+        markdown_content += f"**Potential Duplicates Found:** {len(duplicates_found)}\n"
+        markdown_content += f"**Similarity Threshold:** {threshold * 100:.0f}%\n\n"
+        
+        if not duplicates_found:
+            markdown_content += "_No potential duplicates found with the given threshold._\n"
+        else:
+            # Group by similarity level
+            very_high = [d for d in duplicates_found if d['max_similarity'] >= 0.9]
+            high = [d for d in duplicates_found if 0.8 <= d['max_similarity'] < 0.9]
+            
+            if very_high:
+                markdown_content += "## 🔴 Very High Similarity (≥90%)\n\n"
+                markdown_content += "These issues are very likely duplicates.\n\n"
+                
+                for dup in very_high[:20]:  # Limit to first 20
+                    issue = dup['issue']
+                    markdown_content += f"### [#{issue['number']}: {issue['title']}]({issue['url']})\n"
+                    markdown_content += f"**State:** {issue['state']} | "
+                    if issue['labels']:
+                        if isinstance(issue['labels'], str):
+                            markdown_content += f"**Labels:** {issue['labels']}\n"
+                        elif isinstance(issue['labels'], list):
+                            markdown_content += f"**Labels:** {', '.join(issue['labels'])}\n"
+                        else:
+                            markdown_content += "\n"
+                    else:
+                        markdown_content += "\n"
+                    
+                    markdown_content += "**Potential duplicates:**\n"
+                    for sim in dup['duplicates']:
+                        state_emoji = '🟢' if sim.get('state') == 'open' else '🔴'
+                        markdown_content += f"- {state_emoji} [#{sim['number']}: {sim['title']}]({sim.get('url', '#')}) "
+                        markdown_content += f"({sim['similarity'] * 100:.0f}% similar)\n"
+                    markdown_content += "\n---\n\n"
+            
+            if high:
+                markdown_content += "## 🟡 High Similarity (80-89%)\n\n"
+                markdown_content += "These issues might be duplicates and should be reviewed.\n\n"
+                
+                markdown_content += "| Issue | Potential Duplicates | Max Similarity |\n"
+                markdown_content += "|-------|---------------------|----------------|\n"
+                
+                for dup in high[:30]:  # Limit to first 30
+                    issue = dup['issue']
+                    issue_link = f"[#{issue['number']}]({issue['url']})"
+                    
+                    dup_links = []
+                    for sim in dup['duplicates'][:2]:  # Show top 2
+                        state = '🟢' if sim.get('state') == 'open' else '🔴'
+                        dup_links.append(f"{state} #{sim['number']}")
+                    
+                    max_sim = f"{dup['max_similarity'] * 100:.0f}%"
+                    markdown_content += f"| {issue_link} | {', '.join(dup_links)} | {max_sim} |\n"
+        
+        markdown_content += "\n## Summary\n\n"
+        markdown_content += f"- **Very High Similarity (≥90%):** {len([d for d in duplicates_found if d['max_similarity'] >= 0.9])} issues\n"
+        markdown_content += f"- **High Similarity (80-89%):** {len([d for d in duplicates_found if 0.8 <= d['max_similarity'] < 0.9])} issues\n"
+        markdown_content += f"- **Total Potential Duplicates:** {len(duplicates_found)} issues\n\n"
+        
+        # Add quick actions
+        if duplicates_found:
+            markdown_content += "## Quick Actions\n\n"
+            markdown_content += "### Add 'potential-duplicate' label to high-confidence duplicates:\n"
+            markdown_content += "```bash\n"
+            for dup in duplicates_found[:10]:
+                if dup['max_similarity'] >= 0.9:
+                    markdown_content += f"gh issue edit {dup['issue']['number']} --add-label 'potential-duplicate' -R {repository}\n"
+            markdown_content += "```\n\n"
+        
+        markdown_content += "---\n"
+        markdown_content += "_Generated by [deja-view](https://github.com/bdougie/deja-view)_\n"
+        
+        # Write to file
+        with open(output, 'w') as f:
+            f.write(markdown_content)
+        
+        console.print(f"[green]✓[/green] Report written to: {output}")
+        
+        # Display summary in console
+        table = Table(title=f"Duplicate Issues Summary for {repository}")
+        table.add_column("Similarity", style="cyan")
+        table.add_column("Count", justify="right")
+        
+        table.add_row("≥90% (Very High)", str(len([d for d in duplicates_found if d['max_similarity'] >= 0.9])))
+        table.add_row("80-89% (High)", str(len([d for d in duplicates_found if 0.8 <= d['max_similarity'] < 0.9])))
+        table.add_row("[bold]Total", f"[bold]{len(duplicates_found)}")
+        
+        console.print(table)
+        
+        if duplicates_found:
+            console.print(f"\n[yellow]Tip:[/yellow] Review the report at {output} to identify and close duplicate issues")
+        
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
