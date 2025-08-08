@@ -282,7 +282,7 @@ class TestIndexingAndSearch:
         assert result["indexed"] == 1
         assert result["issues"] == 1
         assert result["discussions"] == 0
-        mock_fetch_issues.assert_called_once_with("owner", "repo", 1)
+        mock_fetch_issues.assert_called_once_with("owner", "repo", 1, state='open')
         mock_fetch_discussions.assert_not_called()
         self.service.collection.upsert.assert_called_once()
     

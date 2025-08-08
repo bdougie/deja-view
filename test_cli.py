@@ -39,7 +39,7 @@ class TestCLICommands:
         assert result.exit_code == 0
         assert "Successfully indexed" in result.output
         assert "50" in result.output
-        self.mock_service.index_repository.assert_called_once_with('owner', 'repo', 50, True)
+        self.mock_service.index_repository.assert_called_once_with('owner', 'repo', 50, True, issue_state='open')
     
     @patch('cli.SimilarityService')
     def test_index_command_invalid_repo_format(self, mock_service_class):
