@@ -17,6 +17,27 @@ Find similar GitHub issues using semantic search powered by Chroma vector databa
 - **Rich CLI**: Beautiful terminal interface with progress indicators
 - **RESTful API**: Full OpenAPI documentation at `/docs`
 
+## Documentation
+
+Comprehensive documentation is available in the [docs](docs/) directory:
+
+- **Getting Started**
+  - [Setup Guide](docs/setup/setup-guide.md) - Installation and configuration
+  - [Authentication](docs/setup/authentication.md) - GitHub CLI authentication guide
+  
+- **Usage Guides**
+  - [CLI Usage](docs/cli-usage.md) - Command-line interface documentation
+  - [API Reference](docs/api-reference.md) - REST API endpoints
+  - [User Comments](docs/user-comments.md) - Fetching user GitHub activity
+  
+- **Integrations**
+  - [MCP for Continue](docs/setup/mcp-guide.md) - AI assistant integration
+  - [GitHub Actions](docs/setup/github-action.md) - Automated issue detection
+  
+- **Architecture**
+  - [Architecture Overview](docs/architecture-overview.md) - System design
+  - [Technical Architecture](docs/architecture.md) - Implementation details
+
 ## Quick Start
 
 ### Prerequisites
