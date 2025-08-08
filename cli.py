@@ -10,6 +10,7 @@ import os
 from datetime import datetime
 
 from github_similarity_service import SimilarityService
+from gh_auth_helper import ensure_gh_auth, format_auth_check_message
 
 console = Console()
 
@@ -25,9 +26,20 @@ def format_similarity_score(score: float) -> str:
 
 @click.group()
 @click.version_option(version="1.0.0")
-def cli():
+@click.pass_context
+def cli(ctx):
     """GitHub Issues Similarity CLI - Find similar issues using semantic search"""
-    pass
+    # Check GitHub CLI authentication for commands that need it
+    # Skip auth check for --help and --version
+    if ctx.invoked_subcommand and '--help' not in sys.argv and '--version' not in sys.argv:
+        # Commands that require GitHub CLI authentication
+        gh_required_commands = ['user-comments', 'index', 'find', 'suggest-discussions', 'quick', 'find-duplicates']
+        
+        if ctx.invoked_subcommand in gh_required_commands:
+            is_auth, username = ensure_gh_auth(exit_on_failure=True, context="The deja-view CLI")
+            if is_auth and username:
+                # Store username in context for use by commands
+                ctx.obj = {'github_user': username}
 
 
 @cli.command()
@@ -442,6 +454,159 @@ def suggest_discussions(repository, min_score, max_suggestions, dry_run, output,
             if not add_labels:
                 console.print(f"[yellow]Tip:[/yellow] Use [bold]--add-labels[/bold] flag to label issues based on confidence")
         
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--user', '-u', help='GitHub username (defaults to authenticated user)')
+@click.option('--limit', '-n', default=10, help='Number of comments to fetch')
+@click.option('--repo', '-r', help='Filter comments by repository (format: owner/repo)')
+@click.option('--since', '-s', help='Show comments since date (YYYY-MM-DD)')
+def user_comments(user, limit, repo, since):
+    """Fetch a user's last comments from GitHub issues and PRs"""
+    import subprocess
+    import json
+    from datetime import datetime as dt
+    
+    try:
+        # Build the gh search command
+        search_query_parts = []
+        
+        if user:
+            search_query_parts.append(f"commenter:{user}")
+        else:
+            # Get authenticated user if not specified
+            result = subprocess.run(
+                ["gh", "api", "user", "--jq", ".login"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            username = result.stdout.strip()
+            search_query_parts.append(f"commenter:{username}")
+            console.print(f"[dim]Fetching comments for authenticated user: {username}[/dim]\n")
+        
+        if repo:
+            search_query_parts.append(f"repo:{repo}")
+        
+        search_query = " ".join(search_query_parts)
+        
+        # Search for issues/PRs with user comments
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Fetching comments...", total=None)
+            
+            # Use gh search to find issues/PRs where user has commented
+            cmd = [
+                "gh", "search", "issues",
+                search_query,
+                "--limit", str(limit * 2),  # Get more to ensure we have enough after filtering
+                "--json", "number,title,repository,state,updatedAt,url,isPullRequest"
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            items = json.loads(result.stdout)
+            
+            if not items:
+                console.print("[yellow]No comments found for the specified criteria.[/yellow]")
+                return
+            
+            # Fetch actual comments for each issue/PR
+            comments_data = []
+            for item in items[:limit]:
+                repo_name = item['repository']['nameWithOwner']
+                issue_number = item['number']
+                
+                # Fetch comments for this issue/PR
+                comment_cmd = [
+                    "gh", "api",
+                    f"repos/{repo_name}/issues/{issue_number}/comments",
+                    "--jq", f'[.[] | select(.user.login == "{user if user else username}") | {{body: .body, created_at: .created_at, html_url: .html_url}}] | first'
+                ]
+                
+                try:
+                    comment_result = subprocess.run(comment_cmd, capture_output=True, text=True, check=True)
+                    if comment_result.stdout.strip():
+                        comment = json.loads(comment_result.stdout)
+                        
+                        # Check date filter if provided
+                        if since:
+                            comment_date = dt.fromisoformat(comment['created_at'].replace('Z', '+00:00'))
+                            since_date = dt.fromisoformat(since)
+                            if comment_date.date() < since_date.date():
+                                continue
+                        
+                        comments_data.append({
+                            'issue_title': item['title'],
+                            'issue_number': issue_number,
+                            'repo': repo_name,
+                            'state': item['state'],
+                            'is_pr': item['isPullRequest'],
+                            'issue_url': item['url'],
+                            'comment_body': comment['body'][:200] + "..." if len(comment['body']) > 200 else comment['body'],
+                            'comment_date': comment['created_at'],
+                            'comment_url': comment['html_url']
+                        })
+                        
+                        if len(comments_data) >= limit:
+                            break
+                except subprocess.CalledProcessError:
+                    continue
+            
+            progress.update(task, completed=True)
+        
+        if not comments_data:
+            console.print("[yellow]No comments found matching the criteria.[/yellow]")
+            return
+        
+        # Display results in a table
+        table = Table(
+            title=f"Last {len(comments_data)} Comments{' by ' + user if user else ''}",
+            show_header=True,
+            header_style="bold magenta"
+        )
+        table.add_column("Date", style="cyan", width=12)
+        table.add_column("Repo", style="blue")
+        table.add_column("#", width=8)
+        table.add_column("Type", width=6)
+        table.add_column("Comment", style="white")
+        
+        for comment in comments_data:
+            # Format date
+            date = dt.fromisoformat(comment['comment_date'].replace('Z', '+00:00'))
+            date_str = date.strftime("%Y-%m-%d")
+            
+            # Type emoji
+            type_emoji = "🔀" if comment['is_pr'] else "🐛"
+            
+            # Truncate comment for display
+            comment_text = comment['comment_body'].replace('\n', ' ')
+            if len(comment_text) > 60:
+                comment_text = comment_text[:60] + "..."
+            
+            table.add_row(
+                date_str,
+                comment['repo'].split('/')[-1] if '/' in comment['repo'] else comment['repo'],
+                str(comment['issue_number']),
+                type_emoji,
+                comment_text
+            )
+        
+        console.print(table)
+        
+        # Show URLs for easy access
+        console.print("\n[dim]Recent comment URLs:[/dim]")
+        for i, comment in enumerate(comments_data[:5], 1):
+            console.print(f"[dim]{i}. {comment['comment_url']}[/dim]")
+        
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Error executing gh command: {e.stderr}[/red]")
+        sys.exit(1)
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")
         sys.exit(1)

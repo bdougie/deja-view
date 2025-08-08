@@ -301,7 +301,7 @@ export $(cat .env.production | xargs)
 
 After setup is complete:
 
-1. **Index your first repository**: See [CLI Usage Guide](cli-usage.md)
+1. **Index your first repository**: See [CLI Usage Guide](../cli-usage.md)
 2. **Set up the GitHub Action**: See [GitHub Action Guide](github-action.md)
-3. **Explore the API**: See [API Reference](api-reference.md)
-4. **Understand the architecture**: See [Architecture Guide](architecture.md)
+3. **Explore the API**: See [API Reference](../api-reference.md)
+4. **Understand the architecture**: See [Architecture Guide](../architecture.md)

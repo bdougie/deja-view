@@ -1,0 +1,18 @@
+# Core dependencies
+click==8.1.7
+rich==13.7.0
+chromadb==0.5.23
+python-dotenv==1.0.0
+pydantic==2.5.3
+requests==2.31.0
+PyGithub==2.1.1
+
+# API dependencies
+fastapi==0.109.0
+uvicorn==0.27.0
+
+# MCP server dependencies
+fastmcp==0.1.8
+
+# GitHub CLI is required but installed separately
+# Install from: https://cli.github.com
