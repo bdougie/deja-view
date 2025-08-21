@@ -264,4 +264,8 @@ jobs:
           echo "- **Answer Rate:** ${{ steps.generate-report.outputs.answer_rate }}%" >> $GITHUB_STEP_SUMMARY
           echo "- **Trend:** ${{ steps.generate-report.outputs.trend_indicator }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ GitHub issue created with full report and @${{ steps.repo-vars.outputs.mention_user }} mentioned" >> $GITHUB_STEP_SUMMARY
+          echo "### Workflow Actions" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Previous report issues automatically closed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ New GitHub issue created with comprehensive metrics" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Full report committed to reports/ folder" >> $GITHUB_STEP_SUMMARY
+          echo "✅ @${{ steps.repo-vars.outputs.mention_user }} mentioned for notification" >> $GITHUB_STEP_SUMMARY
