@@ -75,8 +75,38 @@ Priority: 🚨 High Priority
 
 The workflow automatically applies these labels to created issues:
 - `discussions-metrics` - Identifies automated metrics issues
+- `discussions-metrics-report` - Specific label for report lifecycle management
 - `weekly-report` - Weekly recurring analysis
 - `community-health` - Community management insights
+
+## 🔄 Issue Lifecycle Management
+
+The workflow includes smart issue management:
+
+### Automatic Closure
+- **Searches** for previous open issues with `discussions-metrics-report` label
+- **Filters** for issues related to the same target repository
+- **Closes** previous reports with completion comment
+- **Creates** new issue for current week
+
+### Closure Comment Example
+```markdown
+📊 **Weekly Report Cycle Complete**
+
+This report has been superseded by the latest weekly analysis.
+
+**Status**: Archived
+**Next Report**: A new report for this week has been generated
+
+---
+_Automatically closed by weekly discussions metrics workflow_
+```
+
+This ensures:
+- ✅ Only one active report issue per repository
+- ✅ Clean issue list without old reports
+- ✅ Clear closure messaging for transparency
+- ✅ Maintained history through closed issues
 
 ## 🔧 Customization
 
