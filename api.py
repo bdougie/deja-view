@@ -5,6 +5,7 @@ from typing import List, Dict, Union, Optional
 import uvicorn
 
 from github_similarity_service import SimilarityService
+from discussions_metrics import DiscussionsMetricsService
 import requests
 
 
@@ -23,6 +24,7 @@ app.add_middleware(
 )
 
 similarity_service = SimilarityService()
+discussions_service = DiscussionsMetricsService()
 
 
 class IndexRequest(BaseModel):
@@ -48,6 +50,12 @@ class SuggestDiscussionsRequest(BaseModel):
     max_suggestions: int = Field(20, description="Maximum number of suggestions", ge=1, le=100)
     dry_run: bool = Field(True, description="Dry run mode (no actual changes)")
     add_labels: bool = Field(False, description="Add labels to suggested issues based on confidence level")
+
+
+class DiscussionsMetricsRequest(BaseModel):
+    owner: str = Field(..., description="Repository owner/organization")
+    repo: str = Field(..., description="Repository name")
+    weeks_back: int = Field(4, description="Number of weeks to analyze", ge=1, le=52)
 
 
 class HealthResponse(BaseModel):
@@ -181,6 +189,60 @@ async def suggest_discussions(request: SuggestDiscussionsRequest):
             results["labels_applied"] = len(labeled_issues) > 0
         
         return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/discussions_metrics")
+async def get_discussions_metrics(request: DiscussionsMetricsRequest):
+    """Get GitHub Discussions metrics and analytics"""
+    try:
+        metrics = discussions_service.fetch_discussions_metrics(
+            owner=request.owner,
+            repo=request.repo,
+            weeks_back=request.weeks_back
+        )
+        
+        # Convert dataclass to dict for JSON serialization
+        from dataclasses import asdict
+        return asdict(metrics)
+        
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Repository {request.owner}/{request.repo} not found or discussions not enabled")
+        elif e.response.status_code == 403:
+            raise HTTPException(status_code=403, detail="GitHub API rate limit exceeded or authentication required")
+        else:
+            raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/discussions_metrics/{owner}/{repo}")
+async def get_discussions_metrics_simple(owner: str, repo: str, weeks_back: int = 4):
+    """Get GitHub Discussions metrics (simple GET endpoint)"""
+    try:
+        metrics = discussions_service.fetch_discussions_metrics(
+            owner=owner,
+            repo=repo,
+            weeks_back=weeks_back
+        )
+        
+        # Convert dataclass to dict for JSON serialization
+        from dataclasses import asdict
+        return asdict(metrics)
+        
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Repository {owner}/{repo} not found or discussions not enabled")
+        elif e.response.status_code == 403:
+            raise HTTPException(status_code=403, detail="GitHub API rate limit exceeded or authentication required")
+        else:
+            raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
