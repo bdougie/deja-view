@@ -1,0 +1,271 @@
+name: Weekly Discussions Metrics Report
+
+on:
+  schedule:
+    # Run every Monday at 9:00 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: 'Repository to analyze (owner/repo)'
+        required: false
+        default: 'continuedev/continue'
+      weeks_back:
+        description: 'Number of weeks to analyze'
+        required: false
+        default: '4'
+      mention_user:
+        description: 'User to mention in issue'
+        required: false
+        default: 'bdougie'
+
+jobs:
+  generate-metrics-report:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: feature/discussions-metrics
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+          pip install click rich requests python-dotenv chromadb
+      
+      - name: Set repository variables
+        id: repo-vars
+        run: |
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            echo "target_repo=continuedev/continue" >> $GITHUB_OUTPUT
+            echo "weeks_back=4" >> $GITHUB_OUTPUT
+            echo "mention_user=bdougie" >> $GITHUB_OUTPUT
+          else
+            echo "target_repo=${{ github.event.inputs.repository }}" >> $GITHUB_OUTPUT
+            echo "weeks_back=${{ github.event.inputs.weeks_back }}" >> $GITHUB_OUTPUT
+            echo "mention_user=${{ github.event.inputs.mention_user }}" >> $GITHUB_OUTPUT
+          fi
+          
+          # Generate date stamp for report
+          echo "date_stamp=$(date +%Y-%m-%d)" >> $GITHUB_OUTPUT
+          echo "week_of=$(date +%Y-W%U)" >> $GITHUB_OUTPUT
+      
+      - name: Generate discussions metrics report
+        id: generate-report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Extract owner and repo from target_repo
+          IFS='/' read -r owner repo <<< "${{ steps.repo-vars.outputs.target_repo }}"
+          
+          # Generate report
+          python cli.py discussions-metrics "${{ steps.repo-vars.outputs.target_repo }}" \
+            --weeks "${{ steps.repo-vars.outputs.weeks_back }}" \
+            --output "reports/discussions-metrics-${{ steps.repo-vars.outputs.target_repo }}-${{ steps.repo-vars.outputs.date_stamp }}.md"
+          
+          # Also generate JSON for parsing
+          python cli.py discussions-metrics "${{ steps.repo-vars.outputs.target_repo }}" \
+            --weeks "${{ steps.repo-vars.outputs.weeks_back }}" \
+            --json --output "metrics-data.json"
+          
+          # Parse key metrics from JSON for issue summary
+          python3 << 'EOF'
+          import json
+          import os
+          
+          with open('metrics-data.json', 'r') as f:
+              data = json.load(f)
+          
+          # Extract key metrics
+          total = data.get('total_discussions', 0)
+          this_week = data.get('discussions_this_week', 0)
+          last_week = data.get('discussions_last_week', 0)
+          change_pct = data.get('week_over_week_percentage', 0)
+          unanswered = data.get('total_unanswered_qa', 0)
+          answer_rate = data.get('answer_rate', 0)
+          avg_upvotes = data.get('avg_upvotes', 0)
+          
+          # Set outputs for GitHub Actions
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"total_discussions={total}\n")
+              f.write(f"discussions_this_week={this_week}\n")
+              f.write(f"discussions_last_week={last_week}\n")
+              f.write(f"week_over_week_change={change_pct:+.1f}\n")
+              f.write(f"unanswered_qa={unanswered}\n")
+              f.write(f"answer_rate={answer_rate:.1f}\n")
+              f.write(f"avg_upvotes={avg_upvotes:.1f}\n")
+              
+              # Create trend emoji
+              if change_pct > 10:
+                  trend = "📈 Strong Growth"
+              elif change_pct > 0:
+                  trend = "📈 Growth"
+              elif change_pct < -10:
+                  trend = "📉 Significant Decline"
+              elif change_pct < 0:
+                  trend = "📉 Decline"
+              else:
+                  trend = "➡️ Stable"
+              f.write(f"trend_indicator={trend}\n")
+              
+              # Priority level based on unanswered questions
+              if unanswered > 20:
+                  priority = "🚨 High Priority"
+              elif unanswered > 10:
+                  priority = "⚠️ Medium Priority"
+              else:
+                  priority = "✅ Low Priority"
+              f.write(f"priority_level={priority}\n")
+          EOF
+      
+      - name: Read report content
+        id: read-report
+        run: |
+          # Read the generated markdown report
+          report_file="reports/discussions-metrics-${{ steps.repo-vars.outputs.target_repo }}-${{ steps.repo-vars.outputs.date_stamp }}.md"
+          
+          # Create a truncated version for the issue (GitHub issues have size limits)
+          head -n 100 "$report_file" > truncated_report.md
+          echo "" >> truncated_report.md
+          echo "_...truncated for GitHub issue. [View full report →](https://github.com/${{ github.repository }}/blob/feature/discussions-metrics/$report_file)_" >> truncated_report.md
+          echo "" >> truncated_report.md
+          echo "---" >> truncated_report.md
+          echo "_Generated by [GitHub Actions Weekly Discussions Metrics](https://github.com/${{ github.repository }}/actions)_" >> truncated_report.md
+      
+      - name: Create GitHub Issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Read the truncated report
+            const reportContent = fs.readFileSync('truncated_report.md', 'utf8');
+            
+            // Create issue title
+            const targetRepo = '${{ steps.repo-vars.outputs.target_repo }}';
+            const weekOf = '${{ steps.repo-vars.outputs.week_of }}';
+            const trend = '${{ steps.generate-report.outputs.trend_indicator }}';
+            const priority = '${{ steps.generate-report.outputs.priority_level }}';
+            
+            const title = `📊 Weekly Discussions Metrics: ${targetRepo} (${weekOf})`;
+            
+            // Create issue body with executive summary
+            const issueBody = `# Weekly Discussions Metrics Report
+            
+            **Repository:** ${targetRepo}  
+            **Week Of:** ${weekOf}  
+            **Trend:** ${{ steps.generate-report.outputs.trend_indicator }}  
+            **Priority:** ${{ steps.generate-report.outputs.priority_level }}  
+            
+            ## 📊 Executive Summary
+            
+            | Metric | Value | Change |
+            |--------|-------|---------|
+            | **Total Discussions** | ${{ steps.generate-report.outputs.total_discussions }} | Over ${{ steps.repo-vars.outputs.weeks_back }} weeks |
+            | **This Week** | ${{ steps.generate-report.outputs.discussions_this_week }} | New discussions |
+            | **Week-over-Week** | **${{ steps.generate-report.outputs.week_over_week_change }}%** | ${{ steps.generate-report.outputs.trend_indicator }} |
+            | **Unanswered Q&A/Help** | **${{ steps.generate-report.outputs.unanswered_qa }}** | Need attention |
+            | **Answer Rate** | ${{ steps.generate-report.outputs.answer_rate }}% | Community health |
+            | **Avg Upvotes** | ${{ steps.generate-report.outputs.avg_upvotes }} | Per discussion |
+            
+            ## 🎯 Key Actions
+            
+            ${{ steps.generate-report.outputs.unanswered_qa > 15 && '⚠️ **High Support Backlog**: Consider reviewing unanswered discussions' || '✅ Support backlog manageable' }}
+            
+            ${{ Math.abs(steps.generate-report.outputs.week_over_week_change) > 20 && '📈 **Significant Growth**: Consider scaling moderation resources' || '' }}
+            
+            ## 📋 Full Report
+            
+            ${reportContent}
+            
+            ---
+            
+            /cc @${{ steps.repo-vars.outputs.mention_user }}
+            
+            **Next Report:** ${new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+            `;
+            
+            // Create the issue
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: issueBody,
+              labels: ['discussions-metrics', 'weekly-report', 'community-health']
+            });
+            
+            console.log(`Created issue #${issue.data.number}: ${issue.data.html_url}`);
+            
+            // Comment with additional context if high priority
+            if ('${{ steps.generate-report.outputs.priority_level }}' === '🚨 High Priority') {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.data.number,
+                body: `🚨 **High Priority Alert**: This repository has ${{ steps.generate-report.outputs.unanswered_qa }} unanswered discussions that may need attention.
+                
+                Consider:
+                - Reviewing recent unanswered Help discussions
+                - Scaling community moderation resources
+                - Updating documentation for common questions
+                
+                /cc @${{ steps.repo-vars.outputs.mention_user }}`
+              });
+            }
+      
+      - name: Commit report to repository
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
+          # Add the new report
+          git add reports/
+          
+          # Only commit if there are changes
+          if ! git diff --staged --quiet; then
+            git commit -m "📊 Add weekly discussions metrics report for ${{ steps.repo-vars.outputs.target_repo }} (${{ steps.repo-vars.outputs.date_stamp }})
+            
+            - Total discussions: ${{ steps.generate-report.outputs.total_discussions }}
+            - Week-over-week: ${{ steps.generate-report.outputs.week_over_week_change }}%
+            - Unanswered Q&A: ${{ steps.generate-report.outputs.unanswered_qa }}
+            - Trend: ${{ steps.generate-report.outputs.trend_indicator }}
+            
+            Generated by automated weekly metrics workflow"
+            
+            git push origin feature/discussions-metrics
+          else
+            echo "No changes to commit"
+          fi
+      
+      - name: Summary
+        run: |
+          echo "## 📊 Weekly Discussions Metrics Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository Analyzed:** ${{ steps.repo-vars.outputs.target_repo }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Analysis Period:** ${{ steps.repo-vars.outputs.weeks_back }} weeks" >> $GITHUB_STEP_SUMMARY
+          echo "**Report Date:** ${{ steps.repo-vars.outputs.date_stamp }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Key Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total Discussions:** ${{ steps.generate-report.outputs.total_discussions }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Week-over-Week Change:** ${{ steps.generate-report.outputs.week_over_week_change }}%" >> $GITHUB_STEP_SUMMARY
+          echo "- **Unanswered Q&A:** ${{ steps.generate-report.outputs.unanswered_qa }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Answer Rate:** ${{ steps.generate-report.outputs.answer_rate }}%" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trend:** ${{ steps.generate-report.outputs.trend_indicator }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Workflow Actions" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Previous report issues automatically closed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ New GitHub issue created with comprehensive metrics" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Full report committed to reports/ folder" >> $GITHUB_STEP_SUMMARY
+          echo "✅ @${{ steps.repo-vars.outputs.mention_user }} mentioned for notification" >> $GITHUB_STEP_SUMMARY

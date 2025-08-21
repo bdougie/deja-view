@@ -8,8 +8,10 @@ from rich import print as rprint
 import sys
 import os
 from datetime import datetime
+import json
 
 from github_similarity_service import SimilarityService
+from discussions_metrics import DiscussionsMetricsService
 
 console = Console()
 
@@ -671,6 +673,126 @@ def find_duplicates(repository, threshold, output, state):
         console.print(f"[red]Error: {str(e)}[/red]")
         import traceback
         traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("repository", metavar="OWNER/REPO")
+@click.option("--weeks", "-w", default=4, help="Number of weeks of data to analyze")
+@click.option("--output", "-o", help="Output markdown file path")
+@click.option("--json", "output_json", is_flag=True, help="Output JSON format instead of markdown")
+def discussions_metrics(repository, weeks, output, output_json):
+    """Get GitHub Discussions metrics and analytics"""
+    try:
+        owner, repo = repository.split("/")
+    except ValueError:
+        console.print("[red]Error: Repository must be in format 'owner/repo'[/red]")
+        sys.exit(1)
+    
+    try:
+        service = DiscussionsMetricsService()
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Fetching discussions metrics...", total=None)
+            
+            if output_json:
+                # Get JSON metrics
+                metrics = service.get_json_metrics(owner, repo)
+                progress.update(task, completed=True)
+                
+                # Output JSON
+                if output:
+                    with open(output, 'w') as f:
+                        json.dump(metrics, f, indent=2, default=str)
+                    console.print(f"[green]✓[/green] JSON metrics written to: {output}")
+                else:
+                    console.print(json.dumps(metrics, indent=2, default=str))
+                
+            else:
+                # Generate markdown report
+                report = service.generate_metrics_report(owner, repo, output)
+                progress.update(task, completed=True)
+                
+                if output:
+                    console.print(f"[green]✓[/green] Markdown report written to: {output}")
+                else:
+                    # Print first part of report to console
+                    lines = report.split('\n')
+                    console.print('\n'.join(lines[:50]))  # First 50 lines
+                    if len(lines) > 50:
+                        console.print(f"\n[dim]... and {len(lines) - 50} more lines[/dim]")
+        
+        # Display key metrics in console table
+        if not output_json:
+            metrics_data = service.get_json_metrics(owner, repo)
+            
+            # Summary table
+            table = Table(title=f"📊 Discussions Summary for {repository}", show_header=True, header_style="bold magenta")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", justify="right")
+            table.add_column("Details", style="dim")
+            
+            # Week over week trend
+            trend_emoji = "📈" if metrics_data['week_over_week_percentage'] > 0 else "📉" if metrics_data['week_over_week_percentage'] < 0 else "➡️"
+            trend_color = "green" if metrics_data['week_over_week_percentage'] > 0 else "red" if metrics_data['week_over_week_percentage'] < 0 else "yellow"
+            
+            table.add_row(
+                "Total Discussions",
+                str(metrics_data['total_discussions']),
+                f"Over {weeks} weeks"
+            )
+            table.add_row(
+                "This Week",
+                str(metrics_data['discussions_this_week']),
+                "New discussions"
+            )
+            table.add_row(
+                "Week-over-Week",
+                f"[{trend_color}]{metrics_data['week_over_week_percentage']:+.1f}%[/{trend_color}]",
+                f"{trend_emoji} {metrics_data['week_over_week_change']:+d} change"
+            )
+            table.add_row(
+                "Unanswered Q&A/Help",
+                str(metrics_data['total_unanswered_qa']),
+                f"Answer rate: {metrics_data['answer_rate']:.1f}%"
+            )
+            table.add_row(
+                "Avg Upvotes",
+                f"{metrics_data['avg_upvotes']:.1f}",
+                "Per discussion"
+            )
+            
+            console.print(table)
+            
+            # Show top categories
+            if metrics_data['category_breakdown']:
+                console.print(f"\n[bold]📂 Top Categories:[/bold]")
+                sorted_categories = sorted(metrics_data['category_breakdown'].items(), key=lambda x: x[1], reverse=True)
+                for i, (category, count) in enumerate(sorted_categories[:5]):
+                    percentage = (count / metrics_data['total_discussions']) * 100 if metrics_data['total_discussions'] > 0 else 0
+                    console.print(f"  {i+1}. {category}: {count} discussions ({percentage:.1f}%)")
+            
+            # Quick tips
+            console.print(f"\n[yellow]💡 Tips:[/yellow]")
+            if metrics_data['total_unanswered_qa'] > 0:
+                console.print(f"  • Consider reviewing {metrics_data['total_unanswered_qa']} unanswered Q&A/Help discussions")
+            if metrics_data['week_over_week_percentage'] > 20:
+                console.print(f"  • High growth ({metrics_data['week_over_week_percentage']:+.1f}%) - consider more moderation resources")
+            elif metrics_data['week_over_week_percentage'] < -20:
+                console.print(f"  • Declining activity - consider community engagement initiatives")
+        
+        console.print(f"\n[dim]View discussions at: https://github.com/{owner}/{repo}/discussions[/dim]")
+        
+    except ValueError as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+        console.print("[yellow]Make sure GITHUB_TOKEN is set for discussions access[/yellow]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
         sys.exit(1)
 
 
