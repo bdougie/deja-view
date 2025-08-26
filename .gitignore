@@ -43,6 +43,10 @@ env/
 # MCP Configuration
 .serena/
 
+# Generated files
+release-notes.md
+release-notes-*.md
+
 # Testing
 .pytest_cache/
 .coverage
