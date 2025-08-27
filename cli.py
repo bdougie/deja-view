@@ -25,6 +25,8 @@ def format_similarity_score(score: float) -> str:
         return f"[red]{score:.2%}[/red]"
 
 
+from release_notes import ReleaseNotesGenerator, parse_date
+
 @click.group()
 @click.version_option(version="1.0.0")
 def cli():
@@ -793,6 +795,74 @@ def discussions_metrics(repository, weeks, output, output_json):
         sys.exit(1)
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('repository')
+@click.option('--since', required=True, help='Date to fetch PRs from (YYYY-MM-DD or ISO format)')
+@click.option('--until', help='Optional end date for PRs (YYYY-MM-DD or ISO format)')
+@click.option('--version', help='Version string for the release')
+@click.option('--output', default='release-notes.md', help='Output file path (default: release-notes.md)')
+def release_notes(repository, since, until, version, output):
+    """
+    Generate release notes from merged PRs with tier labels.
+    
+    Example:
+        cli.py release-notes owner/repo --since 2024-01-01
+        cli.py release-notes owner/repo --since 2024-01-01 --until 2024-02-01 --version v1.2.0
+    """
+    # Validate repository format
+    if '/' not in repository:
+        console.print("[red]Error: Repository must be in format 'owner/repo'[/red]")
+        sys.exit(1)
+    
+    try:
+        # Parse dates
+        since_date = parse_date(since)
+        until_date = parse_date(until) if until else None
+        
+        # Initialize generator
+        generator = ReleaseNotesGenerator()
+        
+        # Generate release notes
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Generating release notes...", total=None)
+            
+            release_notes = generator.generate_release_notes(
+                repo_name=repository,
+                since_date=since_date,
+                until_date=until_date,
+                version=version,
+                output_file=output
+            )
+            
+            progress.update(task, completed=True)
+        
+        # Display summary
+        console.print(f"\n[green]✓ Release notes generated successfully![/green]")
+        
+        # Show preview
+        lines = release_notes.split('\n')
+        if len(lines) > 20:
+            console.print("\n[yellow]Preview (first 20 lines):[/yellow]")
+            console.print('\n'.join(lines[:20]))
+            console.print(f"[dim]... and {len(lines) - 20} more lines[/dim]")
+        else:
+            console.print("\n[yellow]Release Notes:[/yellow]")
+            console.print(release_notes)
+        
+        console.print(f"\n[dim]Full release notes saved to: {output}[/dim]")
+        
+    except ValueError as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error generating release notes: {str(e)}[/red]")
         sys.exit(1)
 
 

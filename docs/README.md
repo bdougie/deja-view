@@ -25,6 +25,7 @@ Deja View helps you:
 - [CLI Guide](cli-guide.md) - Quick CLI reference
 - [GitHub Action Guide (Extended)](github-action-guide.md) - Detailed action configuration
 - [Demo Walkthrough](demo.md) - 2-3 minute presentation script
+- [Release Notes Generator](release-notes-generator.md) - Generate changelog from tiered PRs
 
 ## Key Features
 
@@ -41,6 +42,9 @@ AI-powered analysis to identify issues that should be GitHub discussions.
 
 ### 4. Cloud-Native
 Built on Chroma Cloud for scalable vector storage without infrastructure management.
+
+### 5. Release Notes Generation
+Automatically generate formatted release notes from tiered PRs for changelogs.
 
 ## Quick Start
 
